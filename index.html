@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice Word Bomb</title>
+<link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<div class="game">
+
+    <header>
+        <div class="logo">💣</div>
+        <h1>Voice Word Bomb</h1>
+        <p>Don't type. Just SPEAK.</p>
+    </header>
+
+    <!-- MULTIPLAYER LOBBY -->
+
+    <section class="multiplayer-panel">
+
+        <h2>👥 Multiplayer</h2>
+
+        <div id="lobbyControls">
+
+            <button
+                id="createRoomButton"
+                class="room-button"
+            >
+                🎮 Create Room
+            </button>
+
+            <div class="join-row">
+
+                <input
+                    id="roomInput"
+                    maxlength="4"
+                    placeholder="ROOM CODE"
+                    autocomplete="off"
+                >
+
+                <button
+                    id="joinRoomButton"
+                    class="room-button"
+                >
+                    Join
+                </button>
+
+            </div>
+
+        </div>
+
+        <div
+            id="roomInfo"
+            class="room-info hidden"
+        >
+
+            <div>
+                Room:
+                <strong id="roomCode">----</strong>
+            </div>
+
+            <button
+                id="copyRoomButton"
+                class="copy-room"
+            >
+                📋 Copy
+            </button>
+
+        </div>
+
+        <div
+            id="players"
+            class="players"
+        >
+            <div class="player waiting">
+                Waiting for players...
+            </div>
+        </div>
+
+        <div
+            id="connectionStatus"
+            class="connection-status"
+        >
+            🟡 Not connected
+        </div>
+
+    </section>
+
+
+    <!-- GAME -->
+
+    <section class="top-panel">
+
+        <div class="stat">
+            <span class="stat-label">Your Score</span>
+            <strong id="score">0</strong>
+        </div>
+
+        <div class="stat">
+            <span class="stat-label">Streak</span>
+            <strong id="streak">0</strong>
+        </div>
+
+        <div class="stat">
+            <span class="stat-label">Words</span>
+            <strong id="wordsUsed">0</strong>
+        </div>
+
+    </section>
+
+
+    <section class="bomb-area">
+
+        <div id="bomb" class="bomb">
+
+            <div class="bomb-core">
+                💣
+            </div>
+
+            <div
+                id="timer"
+                class="timer"
+            >
+                10.0
+            </div>
+
+        </div>
+
+        <div class="timer-track">
+
+            <div
+                id="timerBar"
+                class="timer-bar"
+            ></div>
+
+        </div>
+
+    </section>
+
+
+    <section class="challenge">
+
+        <div class="challenge-label">
+            SAY A WORD CONTAINING
+        </div>
+
+        <div
+            id="chunk"
+            class="chunk"
+        >
+            --
+        </div>
+
+    </section>
+
+
+    <section class="turn-card">
+
+        <div id="turnText">
+            Create or join a room to play.
+        </div>
+
+    </section>
+
+
+    <section class="heard-card">
+
+        <div class="card-label">
+            🎤 HEARD
+        </div>
+
+        <div
+            id="heard"
+            class="heard"
+        >
+            —
+        </div>
+
+        <div
+            id="result"
+            class="result"
+        >
+            Say a word!
+        </div>
+
+    </section>
+
+
+    <button
+        id="speakButton"
+        class="speak-button"
+        disabled
+    >
+        🎤 HOLD TO SPEAK
+    </button>
+
+
+    <div
+        id="recordingStatus"
+        class="recording-status"
+    >
+        Join a room to start.
+    </div>
+
+
+    <div class="controls">
+
+        <button
+            id="newGameButton"
+            class="secondary"
+        >
+            🔄 New Game
+        </button>
+
+        <button
+            id="copyButton"
+            class="secondary"
+        >
+            📋 Copy Word
+        </button>
+
+        <button
+            id="downloadButton"
+            class="secondary"
+            disabled
+        >
+            💾 Save Audio
+        </button>
+
+    </div>
+
+
+    <div
+        id="message"
+        class="message"
+    ></div>
+
+
+    <div class="used-section">
+
+        <h2>Used Words</h2>
+
+        <div
+            id="usedWords"
+            class="used-words"
+        >
+            No words yet.
+        </div>
+
+    </div>
+
+</div>
+
+<script src="script.js"></script>
+
+</body>
+</html>
