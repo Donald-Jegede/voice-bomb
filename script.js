@@ -1,7 +1,11 @@
 const WORKER_URL = "https://workerjs.donaldjegede29.workers.dev";
-const WS_URL = WORKER_URL.replace(/^http/, "ws");
-
 const TURN_TIME = 20;
+const MIN_ROUNDS = 5;
+const MAX_ROUNDS = 250;
+
+/* =========================================================
+   DOM
+========================================================= */
 
 const recordButton = document.getElementById("speakButton");
 const newGameButton = document.getElementById("newGameButton");
@@ -24,15 +28,33 @@ const recordingStatus = document.getElementById("recordingStatus");
 const message = document.getElementById("message");
 const usedWordsDisplay = document.getElementById("usedWords");
 
-const createRoomButton = document.getElementById("createRoomButton");
-const joinRoomButton = document.getElementById("joinRoomButton");
-const roomInput = document.getElementById("roomInput");
-const roomInfo = document.getElementById("roomInfo");
-const roomCodeDisplay = document.getElementById("roomCode");
-const copyRoomButton = document.getElementById("copyRoomButton");
-const playersDisplay = document.getElementById("players");
-const connectionStatus = document.getElementById("connectionStatus");
 const turnText = document.getElementById("turnText");
+
+const createRoomButton =
+    document.getElementById("createRoomButton");
+
+const joinRoomButton =
+    document.getElementById("joinRoomButton");
+
+const roomInput =
+    document.getElementById("roomInput");
+
+const roomInfo =
+    document.getElementById("roomInfo");
+
+const roomCodeDisplay =
+    document.getElementById("roomCode");
+
+const copyRoomButton =
+    document.getElementById("copyRoomButton");
+
+const playersDisplay =
+    document.getElementById("players");
+
+
+/* =========================================================
+   STATE
+========================================================= */
 
 let socket = null;
 
@@ -40,74 +62,167 @@ let roomCode = "";
 let playerId = "";
 let playerName = "";
 
-let isHost = false;
 let connected = false;
+let isHost = false;
+
+let intentionalDisconnect = false;
+let reconnectTimer = null;
 
 let mediaRecorder = null;
 let mediaStream = null;
 let audioChunks = [];
 let audioBlob = null;
 
-let selectedChunk = "";
+let recording = false;
+let processing = false;
 
-let usedWords = new Set();
+let gameStarted = false;
+let gameOver = false;
 
 let score = 0;
 let streak = 0;
 
+let selectedChunk = "";
+
+let usedWords = new Set();
+
+let currentRound = 0;
+let totalRounds = 5;
+
 let timeLeft = TURN_TIME;
 let timerInterval = null;
 
-let recording = false;
-let processing = false;
-let gameOver = true;
-
-let reconnectTimer = null;
-let intentionalDisconnect = false;
-
 let currentPlayers = [];
 
-let gameStartedAt = 0;
-let timerOwner = false;
+let lastSubmittedWord = "";
+
+let roundTransitionTimer = null;
 
 
 /* =========================================================
-   PLAYER ID / NAME
+   CHUNKS
+========================================================= */
+
+const CHUNKS = [
+    "ea",
+    "er",
+    "st",
+    "tr",
+    "ch",
+    "sh",
+    "th",
+    "ph",
+    "wh",
+    "bl",
+    "br",
+    "cl",
+    "cr",
+    "dr",
+    "fl",
+    "fr",
+    "gl",
+    "gr",
+    "pl",
+    "pr",
+    "sc",
+    "sk",
+    "sl",
+    "sm",
+    "sn",
+    "sp",
+    "sw",
+    "tw",
+    "wr",
+    "ck",
+    "ng",
+    "nd",
+    "nt",
+    "nk",
+    "mp",
+    "ll",
+    "ss",
+    "oo",
+    "ee",
+    "ou",
+    "ow",
+    "ai",
+    "ay",
+    "oa",
+    "oi",
+    "oy",
+    "ar",
+    "ir",
+    "or",
+    "ur",
+    "an",
+    "en",
+    "in",
+    "on",
+    "un",
+    "at",
+    "et",
+    "it",
+    "ot",
+    "ut",
+    "re",
+    "le",
+    "me",
+    "ne",
+    "ing",
+    "and",
+    "the",
+    "ion",
+    "ere",
+    "ate",
+    "ent",
+    "est",
+    "for",
+    "her",
+    "his",
+    "not",
+    "are",
+    "was",
+    "all",
+    "out",
+    "one",
+    "our",
+    "you",
+    "but",
+    "can",
+    "had",
+    "has",
+    "new",
+    "too",
+    "get",
+    "day",
+    "man",
+    "top",
+    "car",
+    "dog",
+    "cat"
+];
+
+
+/* =========================================================
+   PLAYER
 ========================================================= */
 
 function generatePlayerId() {
-    return crypto.randomUUID
-        ? crypto.randomUUID()
-        : "p_" +
-          Math.random().toString(36).slice(2) +
-          Date.now().toString(36);
+    return (
+        "p_" +
+        crypto.randomUUID()
+    );
 }
 
-function getPlayerId() {
-    let id = localStorage.getItem("voiceBombPlayerId");
-
-    if (!id) {
-        id = generatePlayerId();
-
-        localStorage.setItem(
-            "voiceBombPlayerId",
-            id
-        );
-    }
-
-    return id;
-}
 
 function getPlayerName() {
     let name =
-        localStorage.getItem("voiceBombName");
+        localStorage.getItem(
+            "voiceBombName"
+        );
 
     if (!name) {
-        name =
-            "Player " +
-            Math.floor(
-                Math.random() * 900 + 100
-            );
+        name = "Player";
 
         localStorage.setItem(
             "voiceBombName",
@@ -120,7 +235,7 @@ function getPlayerName() {
 
 
 /* =========================================================
-   ROOM CODES
+   ROOM CODE
 ========================================================= */
 
 function generateRoomCode() {
@@ -143,6 +258,23 @@ function generateRoomCode() {
 
 
 /* =========================================================
+   CONNECTION URL
+========================================================= */
+
+function getWebSocketURL() {
+    return (
+        "wss://workerjs.donaldjegede29.workers.dev" +
+        "/room/" +
+        encodeURIComponent(roomCode) +
+        "?player=" +
+        encodeURIComponent(playerId) +
+        "&name=" +
+        encodeURIComponent(playerName)
+    );
+}
+
+
+/* =========================================================
    CONNECTION STATUS
 ========================================================= */
 
@@ -150,19 +282,20 @@ function setConnectionStatus(
     text,
     type = ""
 ) {
-    connectionStatus.textContent = text;
+    const element =
+        document.getElementById(
+            "connectionStatus"
+        );
 
-    connectionStatus.classList.remove(
-        "good",
-        "bad"
-    );
+    if (!element) return;
 
-    if (type === "good") {
-        connectionStatus.classList.add("good");
-    }
+    element.textContent = text;
 
-    if (type === "bad") {
-        connectionStatus.classList.add("bad");
+    element.className =
+        "connection-status";
+
+    if (type) {
+        element.classList.add(type);
     }
 }
 
@@ -209,9 +342,18 @@ function joinRoom() {
             .trim()
             .toUpperCase();
 
+    if (!code) {
+        showMessage(
+            "Enter a room code.",
+            "bad"
+        );
+
+        return;
+    }
+
     if (!/^[A-Z0-9]{4}$/.test(code)) {
         showMessage(
-            "Enter a valid 4-character room code.",
+            "Room codes are 4 characters.",
             "bad"
         );
 
@@ -219,12 +361,6 @@ function joinRoom() {
     }
 
     roomCode = code;
-
-    /*
-        IMPORTANT:
-        We do NOT decide host status here.
-        The Durable Object decides who the host is.
-    */
 
     isHost = false;
 
@@ -237,9 +373,7 @@ function joinRoom() {
 ========================================================= */
 
 function connectToRoom() {
-    if (!roomCode) {
-        return;
-    }
+    if (!roomCode) return;
 
     clearTimeout(reconnectTimer);
 
@@ -251,33 +385,12 @@ function connectToRoom() {
         } catch {}
     }
 
-    playerId =
-        playerId || getPlayerId();
-
-    playerName =
-        playerName || getPlayerName();
-
     setConnectionStatus(
-        "🟡 Connecting...",
-        ""
+        "🟡 Connecting..."
     );
 
-    /*
-        THIS IS THE IMPORTANT FIX.
-
-        Worker expects:
-
-        /room?room=ABCD
-
-        NOT:
-
-        /room/ABCD
-    */
-
     const url =
-        `${WS_URL}/room?room=${encodeURIComponent(
-            roomCode
-        )}`;
+        getWebSocketURL();
 
     console.log(
         "[Voice Bomb] Connecting to:",
@@ -289,7 +402,7 @@ function connectToRoom() {
             new WebSocket(url);
     } catch (error) {
         console.error(
-            "[Voice Bomb] WebSocket creation failed:",
+            "WebSocket creation error:",
             error
         );
 
@@ -301,93 +414,77 @@ function connectToRoom() {
         return;
     }
 
-    socket.addEventListener(
-        "open",
-        () => {
-            console.log(
-                "[Voice Bomb] WebSocket connected"
-            );
+    socket.onopen = () => {
+        console.log(
+            "[Voice Bomb] Connected!"
+        );
 
-            connected = true;
+        connected = true;
 
-            setConnectionStatus(
-                "🟢 Connected",
-                "good"
-            );
+        setConnectionStatus(
+            "🟢 Connected",
+            "good"
+        );
 
-            /*
-                Tell the Worker our name.
-            */
+        showRoom();
 
-            sendSocketMessage({
-                type: "setName",
-                name: playerName
-            });
+        showMessage(
+            `Connected to room ${roomCode}!`,
+            "good"
+        );
 
-            showRoom();
+        sendSocketMessage({
+            type: "join",
+            room: roomCode,
+            playerId,
+            name: playerName,
+            host: isHost
+        });
 
-            updateHostUI();
+        updateHostUI();
 
-            showMessage(
-                `Connected to room ${roomCode}!`,
-                "good"
-            );
+        if (recordButton) {
+            recordButton.disabled =
+                !gameStarted || gameOver;
         }
-    );
+    };
 
-    socket.addEventListener(
-        "message",
-        event => {
-            handleSocketMessage(
-                event.data
-            );
+    socket.onmessage = event => {
+        handleSocketMessage(
+            event.data
+        );
+    };
+
+    socket.onerror = error => {
+        console.error(
+            "[Voice Bomb] WebSocket error:",
+            error
+        );
+
+        setConnectionStatus(
+            "🔴 Connection error",
+            "bad"
+        );
+    };
+
+    socket.onclose = event => {
+        console.log(
+            "[Voice Bomb] WebSocket closed:",
+            event.code,
+            event.reason
+        );
+
+        connected = false;
+
+        setConnectionStatus(
+            "🔴 Disconnected",
+            "bad"
+        );
+
+        if (!intentionalDisconnect) {
+            scheduleReconnect();
         }
-    );
-
-    socket.addEventListener(
-        "error",
-        error => {
-            console.error(
-                "[Voice Bomb] WebSocket error:",
-                error
-            );
-
-            setConnectionStatus(
-                "🔴 Connection error",
-                "bad"
-            );
-        }
-    );
-
-    socket.addEventListener(
-        "close",
-        event => {
-            console.log(
-                "[Voice Bomb] WebSocket closed:",
-                event.code,
-                event.reason
-            );
-
-            connected = false;
-
-            setConnectionStatus(
-                "🔴 Disconnected",
-                "bad"
-            );
-
-            /*
-                Don't reconnect while the user is
-                intentionally leaving.
-            */
-
-            if (
-                !intentionalDisconnect &&
-                roomCode
-            ) {
-                scheduleReconnect();
-            }
-        }
-    );
+    };
 }
 
 
@@ -396,7 +493,9 @@ function connectToRoom() {
 ========================================================= */
 
 function scheduleReconnect() {
-    clearTimeout(reconnectTimer);
+    clearTimeout(
+        reconnectTimer
+    );
 
     reconnectTimer =
         setTimeout(() => {
@@ -405,10 +504,6 @@ function scheduleReconnect() {
                 !connected &&
                 !intentionalDisconnect
             ) {
-                console.log(
-                    "[Voice Bomb] Reconnecting..."
-                );
-
                 connectToRoom();
             }
         }, 2500);
@@ -416,19 +511,38 @@ function scheduleReconnect() {
 
 
 /* =========================================================
-   SEND SOCKET MESSAGE
+   DISCONNECT
+========================================================= */
+
+function disconnectRoom() {
+    intentionalDisconnect = true;
+
+    clearTimeout(
+        reconnectTimer
+    );
+
+    if (socket) {
+        try {
+            socket.close();
+        } catch {}
+    }
+
+    socket = null;
+
+    connected = false;
+}
+
+
+/* =========================================================
+   SEND
 ========================================================= */
 
 function sendSocketMessage(data) {
     if (
         !socket ||
-        socket.readyState !== WebSocket.OPEN
+        socket.readyState !==
+            WebSocket.OPEN
     ) {
-        console.warn(
-            "[Voice Bomb] Tried to send while disconnected:",
-            data
-        );
-
         return false;
     }
 
@@ -440,7 +554,7 @@ function sendSocketMessage(data) {
         return true;
     } catch (error) {
         console.error(
-            "[Voice Bomb] Send failed:",
+            "WebSocket send failed:",
             error
         );
 
@@ -454,6 +568,11 @@ function sendSocketMessage(data) {
 ========================================================= */
 
 function handleSocketMessage(raw) {
+    console.log(
+        "[Voice Bomb] Server:",
+        raw
+    );
+
     let data;
 
     try {
@@ -470,495 +589,295 @@ function handleSocketMessage(raw) {
         return;
     }
 
-    if (!data || !data.type) {
-        return;
-    }
+    if (!data) return;
 
-    console.log(
-        "[Voice Bomb] Server:",
-        data
-    );
-
-    switch (data.type) {
-        case "welcome":
-            handleWelcome(data);
-            break;
-
-        case "playerJoined":
-            handlePlayerJoined(data);
-            break;
-
-        case "playerLeft":
-            handlePlayerLeft(data);
-            break;
-
-        case "players":
-            updatePlayers(
-                data.players
-            );
-            break;
-
-        case "becameHost":
-            handleBecameHost();
-            break;
-
-        case "gameStarted":
-            handleGameStarted(data);
-            break;
-
-        case "chunkChanged":
-            handleChunkChanged(data);
-            break;
-
-        case "wordAccepted":
-            handleWordAccepted(data);
-            break;
-
-        case "wordResult":
-            handleWordResult(data);
-            break;
-
-        case "gameOver":
-            handleGameOver(data);
-            break;
-
-        case "error":
-            showMessage(
-                data.error ||
-                "Server error.",
-                "bad"
-            );
-            break;
-
-        default:
-            console.log(
-                "[Voice Bomb] Unknown message:",
-                data.type
-            );
-    }
-}
-
-
-/* =========================================================
-   WELCOME
-========================================================= */
-
-function handleWelcome(data) {
-    connected = true;
-
-    if (data.player) {
-        playerId =
-            data.player.id ||
-            playerId;
-
-        playerName =
-            data.player.name ||
-            playerName;
-    }
-
-    /*
-        The Worker tells us the real host.
-    */
-
-    isHost =
-        data.isHost === true;
-
-    if (
-        data.game &&
-        data.game.hostId
-    ) {
-        isHost =
-            data.game.hostId ===
-            playerId;
-    }
-
-    showRoom();
-
-    updateHostUI();
-
-    if (data.game) {
-        applyServerGame(
-            data.game
-        );
-    }
-
-    /*
-        The Worker doesn't currently send the
-        player list inside welcome, so use it
-        if available.
-    */
-
-    if (data.game?.players) {
-        updatePlayers(
-            data.game.players
-        );
-    }
-
-    turnText.textContent =
-        isHost
-            ? "👑 You are the host."
-            : "Waiting for the host to start.";
-
-    console.log(
-        "[Voice Bomb] Welcome:",
-        {
-            playerId,
-            playerName,
-            isHost
-        }
-    );
-}
-
-
-/* =========================================================
-   PLAYER JOINED
-========================================================= */
-
-function handlePlayerJoined(data) {
-    updatePlayers(
-        data.players || []
-    );
-
-    if (data.player) {
-        showMessage(
-            `👋 ${data.player.name} joined the room!`,
-            "good"
-        );
-    }
-
-    if (
-        data.player &&
-        data.player.id === playerId
-    ) {
-        return;
-    }
-}
-
-
-/* =========================================================
-   PLAYER LEFT
-========================================================= */
-
-function handlePlayerLeft(data) {
-    updatePlayers(
-        data.players || []
-    );
-
-    if (data.playerId) {
-        showMessage(
-            "👋 A player left the room.",
+    const type =
+        String(
+            data.type ||
+            data.event ||
             ""
-        );
-    }
+        ).toLowerCase();
 
-    if (
-        data.hostId &&
-        data.hostId === playerId
-    ) {
-        isHost = true;
+
+    /* WELCOME */
+
+    if (type === "welcome") {
+        connected = true;
+
+        if (data.player) {
+            if (data.player.id) {
+                playerId =
+                    data.player.id;
+            }
+
+            if (data.player.name) {
+                playerName =
+                    data.player.name;
+            }
+        }
+
+        if (
+            typeof data.isHost ===
+            "boolean"
+        ) {
+            isHost =
+                data.isHost;
+        }
+
+        if (data.game) {
+            applyServerGameState(
+                data.game
+            );
+        }
+
+        if (data.players) {
+            currentPlayers =
+                data.players;
+
+            renderPlayers(
+                currentPlayers
+            );
+        }
 
         updateHostUI();
+
+        return;
+    }
+
+
+    /* NEW PLAYER */
+
+    if (
+        type === "playerjoined"
+    ) {
+        if (data.players) {
+            currentPlayers =
+                data.players;
+
+            renderPlayers(
+                currentPlayers
+            );
+        }
+
+        const player =
+            data.player;
+
+        if (
+            player &&
+            player.id !== playerId
+        ) {
+            showMessage(
+                `👋 ${player.name || "A new player"} joined!`,
+                "good"
+            );
+        }
+
+        return;
+    }
+
+
+    /* PLAYER LIST */
+
+    if (type === "players") {
+        currentPlayers =
+            data.players || [];
+
+        renderPlayers(
+            currentPlayers
+        );
+
+        return;
+    }
+
+
+    /* PLAYER LEFT */
+
+    if (type === "playerleft") {
+        currentPlayers =
+            data.players || [];
+
+        renderPlayers(
+            currentPlayers
+        );
+
+        return;
+    }
+
+
+    /* HOST CHANGED */
+
+    if (type === "becamehost") {
+        isHost = true;
 
         showMessage(
             "👑 You are now the host!",
             "good"
         );
-    }
-}
 
-
-/* =========================================================
-   BECAME HOST
-========================================================= */
-
-function handleBecameHost() {
-    isHost = true;
-
-    updateHostUI();
-
-    turnText.textContent =
-        "👑 You are the host.";
-
-    showMessage(
-        "👑 You are now the host!",
-        "good"
-    );
-}
-
-
-/* =========================================================
-   PLAYERS
-========================================================= */
-
-function updatePlayers(players) {
-    if (!Array.isArray(players)) {
-        return;
-    }
-
-    currentPlayers = players;
-
-    playersDisplay.innerHTML = "";
-
-    if (players.length === 0) {
-        playersDisplay.innerHTML =
-            `<div class="player waiting">
-                Waiting for players...
-            </div>`;
+        updateHostUI();
 
         return;
     }
 
-    players.forEach(player => {
-        const div =
-            document.createElement("div");
 
-        div.className =
-            "player";
+    /* CHUNK */
 
-        const isCurrent =
-            player.id === playerId;
+    if (type === "chunkchanged") {
+        if (data.chunk) {
+            selectedChunk =
+                normalizeChunk(
+                    data.chunk
+                );
 
-        const isPlayerHost =
-            player.id ===
-            currentHostId();
+            displayChunk();
+        }
 
-        div.textContent =
-            `${isPlayerHost ? "👑" : "👤"} ${
-                player.name || "Player"
-            }${
-                isCurrent
-                    ? " (You)"
-                    : ""
-            }`;
+        return;
+    }
 
-        playersDisplay.appendChild(
-            div
+
+    /* GAME STARTED */
+
+    if (type === "gamestarted") {
+        if (data.game) {
+            applyServerGameState(
+                data.game
+            );
+        }
+
+        return;
+    }
+
+
+    /* WORD ACCEPTED */
+
+    if (type === "wordaccepted") {
+        handleRemoteWordAccepted(
+            data
         );
-    });
-}
-
-
-function currentHostId() {
-    /*
-        We know our own host status, but the Worker
-        doesn't always include hostId in player data.
-
-        If we are host, our ID is the host ID.
-    */
-
-    if (isHost) {
-        return playerId;
-    }
-
-    return null;
-}
-
-
-/* =========================================================
-   ROOM UI
-========================================================= */
-
-function showRoom() {
-    roomInfo.classList.remove(
-        "hidden"
-    );
-
-    roomCodeDisplay.textContent =
-        roomCode;
-
-    createRoomButton.disabled =
-        connected;
-
-    joinRoomButton.disabled =
-        connected;
-
-    roomInput.disabled =
-        connected;
-}
-
-
-function updateHostUI() {
-    /*
-        New Game is ONLY usable by host.
-    */
-
-    if (!roomCode) {
-        newGameButton.disabled =
-            true;
 
         return;
     }
 
-    newGameButton.disabled =
-        !isHost;
 
-    newGameButton.title =
-        isHost
-            ? "Start a new game"
-            : "Only the host can start a new game";
-}
+    /* WORD RESULT */
 
-
-/* =========================================================
-   COPY ROOM
-========================================================= */
-
-copyRoomButton.addEventListener(
-    "click",
-    async () => {
-        if (!roomCode) {
-            return;
-        }
-
-        try {
-            await navigator.clipboard.writeText(
-                roomCode
-            );
-
-            copyRoomButton.textContent =
-                "✅ Copied!";
-
-            setTimeout(() => {
-                copyRoomButton.textContent =
-                    "📋 Copy";
-            }, 1200);
-        } catch {
-            showMessage(
-                "Couldn't copy the room code.",
-                "bad"
+    if (type === "wordresult") {
+        if (
+            data.success === false
+        ) {
+            handleServerWordFailure(
+                data
             );
         }
+
+        return;
     }
-);
 
 
-/* =========================================================
-   NEW GAME
-========================================================= */
+    /* GAME OVER */
 
-function newGame() {
-    if (!connected) {
+    if (type === "gameover") {
+        if (data.game) {
+            applyServerGameState(
+                data.game
+            );
+        }
+
+        endGame(
+            "💥 BOOM!"
+        );
+
+        return;
+    }
+
+
+    /* ERROR */
+
+    if (type === "error") {
         showMessage(
-            "Connect to a room first.",
+            data.error ||
+            "Server error.",
             "bad"
         );
 
         return;
     }
 
-    if (!isHost) {
-        showMessage(
-            "🔒 Only the host can start a new game.",
-            "bad"
+
+    /* FALLBACK */
+
+    if (data.game) {
+        applyServerGameState(
+            data.game
         );
-
-        return;
     }
 
-    /*
-        IMPORTANT:
-        The Worker creates the chunk.
-        We do NOT generate it locally.
-    */
+    if (data.players) {
+        currentPlayers =
+            data.players;
 
-    sendSocketMessage({
-        type: "newGame"
-    });
+        renderPlayers(
+            currentPlayers
+        );
+    }
 }
 
 
 /* =========================================================
-   GAME STARTED
+   SERVER GAME STATE
 ========================================================= */
 
-function handleGameStarted(data) {
-    const game =
-        data.game || {};
+function applyServerGameState(game) {
+    if (!game) return;
 
-    stopTimer();
-
-    gameOver = false;
-    processing = false;
-
-    usedWords.clear();
-
-    score = 0;
-    streak = 0;
-
-    timeLeft =
-        typeof game.timeLeft === "number"
-            ? game.timeLeft
-            : TURN_TIME;
-
-    selectedChunk =
-        game.chunk || "";
-
-    if (selectedChunk) {
-        chunkDisplay.textContent =
-            selectedChunk.toUpperCase();
-    }
-
-    transcript.textContent =
-        "—";
-
-    resultText.textContent =
-        "Say a word!";
-
-    resultText.className =
-        "result";
-
-    recordingStatus.textContent =
-        "Hold the button and say ONE word.";
-
-    recordButton.disabled =
-        false;
-
-    bomb.classList.remove(
-        "explode",
-        "warning"
-    );
-
-    updateStats();
-    renderUsedWords();
-    updateTimer();
-
-    turnText.textContent =
-        isHost
-            ? "👑 Game started! You're the host."
-            : "🔥 Game started!";
-
-    showMessage(
-        "🔥 New game started!",
-        "good"
-    );
-
-    startTimer();
-}
-
-
-/* =========================================================
-   APPLY SERVER GAME
-========================================================= */
-
-function applyServerGame(game) {
-    if (!game) {
-        return;
-    }
-
-    if (game.hostId) {
+    if (
+        typeof game.hostId ===
+        "string"
+    ) {
         isHost =
             game.hostId ===
             playerId;
+    }
 
-        updateHostUI();
+    if (
+        Array.isArray(
+            game.players
+        )
+    ) {
+        currentPlayers =
+            game.players;
+
+        renderPlayers(
+            currentPlayers
+        );
+    }
+
+    if (
+        typeof game.rounds ===
+        "number"
+    ) {
+        totalRounds =
+            clampRounds(
+                game.rounds
+            );
+    }
+
+    if (
+        typeof game.currentRound ===
+        "number"
+    ) {
+        currentRound =
+            game.currentRound;
     }
 
     if (game.chunk) {
         selectedChunk =
-            game.chunk;
+            normalizeChunk(
+                game.chunk
+            );
 
-        chunkDisplay.textContent =
-            selectedChunk.toUpperCase();
+        displayChunk();
     }
 
     if (
@@ -973,62 +892,338 @@ function applyServerGame(game) {
                     game.timeLeft
                 )
             );
+
+        updateTimer();
     }
 
-    if (game.started) {
-        gameOver = false;
+    if (
+        typeof game.started ===
+        "boolean"
+    ) {
+        gameStarted =
+            game.started;
+    }
 
+    if (
+        typeof game.gameOver ===
+        "boolean"
+    ) {
+        gameOver =
+            game.gameOver;
+    }
+
+    updateRoundDisplay();
+    updateHostUI();
+
+    if (gameStarted && !gameOver) {
         recordButton.disabled =
             false;
 
-        updateTimer();
         startExistingTimer();
     } else {
-        gameOver = true;
-
-        stopTimer();
-
         recordButton.disabled =
             true;
 
-        updateTimer();
+        stopTimer();
     }
 }
 
 
 /* =========================================================
-   CHUNK CHANGED
+   ROOM UI
 ========================================================= */
 
-function handleChunkChanged(data) {
-    if (!data.chunk) {
+function showRoom() {
+    if (roomInfo) {
+        roomInfo.classList.remove(
+            "hidden"
+        );
+    }
+
+    if (roomCodeDisplay) {
+        roomCodeDisplay.textContent =
+            roomCode;
+    }
+}
+
+
+function renderPlayers(players) {
+    if (!playersDisplay) return;
+
+    if (
+        !Array.isArray(players) ||
+        players.length === 0
+    ) {
+        playersDisplay.innerHTML =
+            `<div class="player waiting">
+                Waiting for players...
+            </div>`;
+
         return;
     }
 
+    playersDisplay.innerHTML = "";
+
+    players.forEach(player => {
+        const div =
+            document.createElement(
+                "div"
+            );
+
+        div.className =
+            "player";
+
+        const id =
+            player.id ||
+            player.playerId;
+
+        const host =
+            id === player.hostId ||
+            player.host === true ||
+            player.isHost === true;
+
+        div.textContent =
+            `${host ? "👑 " : "👤 "}${player.name || "Player"}`;
+
+        playersDisplay.appendChild(
+            div
+        );
+    });
+}
+
+
+/* =========================================================
+   HOST UI
+========================================================= */
+
+function updateHostUI() {
+    if (!newGameButton) return;
+
+    if (!roomCode) {
+        newGameButton.disabled =
+            false;
+
+        return;
+    }
+
+    newGameButton.disabled =
+        !isHost;
+
+    newGameButton.title =
+        isHost
+            ? "Host controls"
+            : "Only the host can start a new game.";
+}
+
+
+/* =========================================================
+   ROUND SETTINGS UI
+========================================================= */
+
+function createRoundControls() {
+    if (!isHost) return;
+
+    let existing =
+        document.getElementById(
+            "roundControls"
+        );
+
+    if (existing) return;
+
+    const panel =
+        document.querySelector(
+            ".multiplayer-panel"
+        );
+
+    if (!panel) return;
+
+    const controls =
+        document.createElement(
+            "div"
+        );
+
+    controls.id =
+        "roundControls";
+
+    controls.style.marginTop =
+        "14px";
+
+    controls.style.padding =
+        "12px";
+
+    controls.style.borderRadius =
+        "12px";
+
+    controls.style.background =
+        "rgba(255,255,255,0.06)";
+
+    controls.innerHTML = `
+        <div style="font-weight:800;margin-bottom:8px;">
+            👑 Host Settings
+        </div>
+
+        <label style="display:block;margin-bottom:6px;">
+            Number of rounds:
+        </label>
+
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <input
+                id="roundCountInput"
+                type="number"
+                min="5"
+                max="250"
+                value="${totalRounds}"
+                style="
+                    width:100px;
+                    padding:9px;
+                    border-radius:9px;
+                    border:none;
+                    outline:none;
+                "
+            >
+
+            <span>
+                rounds
+            </span>
+        </div>
+
+        <small style="display:block;margin-top:6px;opacity:.7;">
+            Minimum 5 • Maximum 250
+        </small>
+    `;
+
+    panel.appendChild(
+        controls
+    );
+}
+
+
+function getRoundCount() {
+    const input =
+        document.getElementById(
+            "roundCountInput"
+        );
+
+    if (!input) {
+        return totalRounds;
+    }
+
+    let value =
+        Number(input.value);
+
+    if (!Number.isFinite(value)) {
+        value = 5;
+    }
+
+    value =
+        Math.round(value);
+
+    value =
+        clampRounds(value);
+
+    input.value =
+        value;
+
+    return value;
+}
+
+
+function clampRounds(value) {
+    return Math.max(
+        MIN_ROUNDS,
+        Math.min(
+            MAX_ROUNDS,
+            Math.round(value)
+        )
+    );
+}
+
+
+/* =========================================================
+   CHUNKS
+========================================================= */
+
+function chooseChunk() {
+    let chunk;
+
+    do {
+        chunk =
+            CHUNKS[
+                Math.floor(
+                    Math.random() *
+                    CHUNKS.length
+                )
+            ];
+    } while (
+        CHUNKS.length > 1 &&
+        chunk === selectedChunk
+    );
+
     selectedChunk =
-        data.chunk
-            .toLowerCase();
+        chunk;
+
+    displayChunk();
+}
+
+
+function normalizeChunk(chunk) {
+    if (
+        typeof chunk !==
+        "string"
+    ) {
+        return "";
+    }
+
+    return chunk
+        .toLowerCase()
+        .replace(
+            /[^a-z]/g,
+            ""
+        )
+        .slice(0, 3);
+}
+
+
+function displayChunk() {
+    if (!chunkDisplay) return;
 
     chunkDisplay.textContent =
-        selectedChunk.toUpperCase();
+        selectedChunk
+            ? selectedChunk.toUpperCase()
+            : "--";
+}
 
-    timeLeft =
-        TURN_TIME;
 
-    gameOver = false;
+/* =========================================================
+   ROUND DISPLAY
+========================================================= */
 
-    transcript.textContent =
-        "—";
+function updateRoundDisplay() {
+    if (!turnText) return;
 
-    resultText.textContent =
-        "Say a word!";
+    if (!roomCode) {
+        turnText.textContent =
+            "Create or join a room to play.";
 
-    resultText.className =
-        "result";
+        return;
+    }
 
-    updateTimer();
+    if (!gameStarted) {
+        turnText.textContent =
+            isHost
+                ? "Set the rounds and start the game."
+                : "Waiting for the host to start...";
+        return;
+    }
 
-    startTimer();
+    if (gameOver) {
+        turnText.textContent =
+            "Game over!";
+        return;
+    }
+
+    turnText.textContent =
+        `Round ${currentRound} / ${totalRounds}`;
 }
 
 
@@ -1039,54 +1234,37 @@ function handleChunkChanged(data) {
 function startTimer() {
     stopTimer();
 
-    if (gameOver) {
+    if (
+        !gameStarted ||
+        gameOver
+    ) {
         return;
     }
 
-    timeLeft = TURN_TIME;
+    timeLeft =
+        TURN_TIME;
 
     updateTimer();
 
-    timerInterval =
-        setInterval(() => {
-            if (
-                gameOver ||
-                processing
-            ) {
-                return;
-            }
-
-            timeLeft -= 0.1;
-
-            if (timeLeft <= 0) {
-                timeLeft = 0;
-
-                updateTimer();
-
-                explode();
-
-                return;
-            }
-
-            updateTimer();
-        }, 100);
+    startExistingTimer();
 }
 
 
 function startExistingTimer() {
     stopTimer();
 
-    if (gameOver) {
+    if (
+        !gameStarted ||
+        gameOver
+    ) {
         return;
     }
-
-    updateTimer();
 
     timerInterval =
         setInterval(() => {
             if (
-                gameOver ||
-                processing
+                processing ||
+                recording
             ) {
                 return;
             }
@@ -1098,13 +1276,15 @@ function startExistingTimer() {
 
                 updateTimer();
 
-                explode();
+                timeExpired();
 
                 return;
             }
 
             updateTimer();
         }, 100);
+
+    updateTimer();
 }
 
 
@@ -1113,39 +1293,47 @@ function stopTimer() {
         clearInterval(
             timerInterval
         );
-
-        timerInterval = null;
     }
+
+    timerInterval = null;
 }
 
 
 function updateTimer() {
+    if (!timerDisplay) return;
+
     timerDisplay.textContent =
         timeLeft.toFixed(1);
 
-    const percentage =
-        (timeLeft / TURN_TIME) * 100;
+    const percent =
+        (timeLeft /
+            TURN_TIME) *
+        100;
 
-    timerBar.style.width =
-        `${Math.max(
-            0,
-            percentage
-        )}%`;
+    if (timerBar) {
+        timerBar.style.width =
+            `${Math.max(
+                0,
+                percent
+            )}%`;
+    }
 
-    if (timeLeft <= 5) {
-        timerBar.classList.add(
+    if (
+        timeLeft <= 5
+    ) {
+        bomb?.classList.add(
             "warning"
         );
 
-        bomb.classList.add(
+        timerBar?.classList.add(
             "warning"
         );
     } else {
-        timerBar.classList.remove(
+        bomb?.classList.remove(
             "warning"
         );
 
-        bomb.classList.remove(
+        timerBar?.classList.remove(
             "warning"
         );
     }
@@ -1153,123 +1341,235 @@ function updateTimer() {
 
 
 /* =========================================================
-   EXPLODE
+   TIME EXPIRED
 ========================================================= */
 
-function explode() {
-    if (gameOver) {
+function timeExpired() {
+    if (
+        gameOver ||
+        !gameStarted
+    ) {
         return;
     }
 
     stopTimer();
 
-    gameOver = true;
-
-    bomb.classList.remove(
-        "warning"
+    endGame(
+        "💥 BOOM! Time ran out!"
     );
-
-    bomb.classList.add(
-        "explode"
-    );
-
-    resultText.textContent =
-        "💥 BOOM!";
-
-    resultText.className =
-        "result bad";
-
-    message.textContent =
-        "Time ran out!";
-
-    message.className =
-        "message bad";
-
-    recordButton.disabled =
-        true;
-
-    recordingStatus.textContent =
-        "Game over.";
-
-    streak = 0;
-
-    updateStats();
-
-    /*
-        Tell the Worker.
-        The Worker will broadcast gameOver.
-    */
 
     sendSocketMessage({
-        type: "gameOver"
+        type: "gameOver",
+        playerId,
+        name: playerName,
+        reason: "timeout"
     });
-
-    setTimeout(() => {
-        bomb.classList.remove(
-            "explode"
-        );
-    }, 600);
 }
 
 
 /* =========================================================
-   GAME OVER FROM SERVER
+   NEW GAME
 ========================================================= */
 
-function handleGameOver(data) {
+function newGame() {
+    if (
+        roomCode &&
+        !isHost
+    ) {
+        showMessage(
+            "🔒 Only the host can start a new game.",
+            "bad"
+        );
+
+        return;
+    }
+
+    const rounds =
+        getRoundCount();
+
+    totalRounds =
+        rounds;
+
     stopTimer();
 
+    cleanupStream();
+
+    clearTimeout(
+        roundTransitionTimer
+    );
+
+    score = 0;
+    streak = 0;
+
+    currentRound = 1;
+
+    timeLeft =
+        TURN_TIME;
+
+    gameStarted = true;
+    gameOver = false;
+
+    processing = false;
+    recording = false;
+
+    usedWords.clear();
+
+    lastSubmittedWord = "";
+
+    audioBlob = null;
+    audioChunks = [];
+
+    downloadButton.disabled =
+        true;
+
+    recordButton.disabled =
+        false;
+
+    recordButton.classList.remove(
+        "speaking"
+    );
+
+    recordButton.textContent =
+        "🎤 SPEAK";
+
+    recordingStatus.textContent =
+        "Click SPEAK and say ONE word.";
+
+    transcript.textContent =
+        "—";
+
+    resultText.textContent =
+        "Say a word!";
+
+    resultText.className =
+        "result";
+
+    hideMessage();
+
+    bomb.classList.remove(
+        "explode",
+        "warning"
+    );
+
+    chooseChunk();
+
+    updateStats();
+    renderUsedWords();
+    updateRoundDisplay();
+    updateTimer();
+
+    if (roomCode && isHost) {
+        sendSocketMessage({
+            type: "newGame",
+            rounds: totalRounds,
+            chunk: selectedChunk,
+            currentRound: 1,
+            timeLeft: TURN_TIME
+        });
+    }
+
+    startTimer();
+}
+
+
+/* =========================================================
+   ADVANCE ROUND
+========================================================= */
+
+function advanceRound() {
+    if (gameOver) return;
+
+    if (
+        currentRound >=
+        totalRounds
+    ) {
+        finishGame();
+
+        return;
+    }
+
+    currentRound++;
+
+    chooseChunk();
+
+    transcript.textContent =
+        "—";
+
+    resultText.textContent =
+        "Say a word!";
+
+    resultText.className =
+        "result";
+
+    timeLeft =
+        TURN_TIME;
+
+    updateRoundDisplay();
+    updateTimer();
+
+    if (isHost) {
+        sendSocketMessage({
+            type: "round",
+            currentRound,
+            totalRounds,
+            chunk: selectedChunk,
+            timeLeft: TURN_TIME
+        });
+    }
+
+    startTimer();
+}
+
+
+/* =========================================================
+   FINISH GAME
+========================================================= */
+
+function finishGame() {
+    stopTimer();
+
+    gameStarted = false;
     gameOver = true;
 
     recordButton.disabled =
         true;
 
-    bomb.classList.remove(
-        "warning"
-    );
+    turnText.textContent =
+        "🏆 Game complete!";
 
-    bomb.classList.add(
-        "explode"
+    recordingStatus.textContent =
+        "All rounds completed.";
+
+    showMessage(
+        `🏆 ${totalRounds} rounds complete!`,
+        "good"
     );
 
     resultText.textContent =
-        "💥 BOOM!";
+        "🏆 GAME COMPLETE";
 
     resultText.className =
-        "result bad";
+        "result good";
 
-    message.textContent =
-        "💥 The bomb exploded!";
-
-    message.className =
-        "message bad";
-
-    recordingStatus.textContent =
-        "Game over.";
-
-    turnText.textContent =
-        isHost
-            ? "👑 Start another game when ready."
-            : "Waiting for the host to start again.";
-
-    setTimeout(() => {
-        bomb.classList.remove(
-            "explode"
-        );
-    }, 600);
+    if (isHost) {
+        sendSocketMessage({
+            type: "gameOver",
+            reason: "roundsComplete"
+        });
+    }
 }
 
 
 /* =========================================================
-   RECORDING
+   AUTOMATIC RECORDING
 ========================================================= */
 
 async function startRecording() {
     if (
         processing ||
-        gameOver ||
         recording ||
-        !connected
+        !gameStarted ||
+        gameOver
     ) {
         return;
     }
@@ -1343,10 +1643,11 @@ async function startRecording() {
         );
 
         recordButton.textContent =
-            "🟢 RELEASE TO SUBMIT";
+            "🔴 RECORDING...";
 
         recordingStatus.textContent =
-            "Listening... say ONE word!";
+            "🎤 Listening... say ONE word!";
+
     } catch (error) {
         console.error(
             "Microphone error:",
@@ -1363,10 +1664,12 @@ async function startRecording() {
 }
 
 
+/* =========================================================
+   STOP RECORDING
+========================================================= */
+
 function stopRecording() {
-    if (!recording) {
-        return;
-    }
+    if (!recording) return;
 
     recording = false;
 
@@ -1375,7 +1678,7 @@ function stopRecording() {
     );
 
     recordButton.textContent =
-        "🎤 HOLD TO SPEAK";
+        "🧠 PROCESSING...";
 
     recordingStatus.textContent =
         "🧠 Transcribing...";
@@ -1391,87 +1694,26 @@ function stopRecording() {
 
 
 /* =========================================================
-   POINTER RECORDING
+   SPEAK BUTTON
 ========================================================= */
 
-recordButton.addEventListener(
-    "pointerdown",
-    event => {
-        event.preventDefault();
+if (recordButton) {
+    recordButton.disabled =
+        true;
 
-        try {
-            recordButton.setPointerCapture(
-                event.pointerId
-            );
-        } catch {}
-
-        startRecording();
-    }
-);
-
-
-recordButton.addEventListener(
-    "pointerup",
-    event => {
-        event.preventDefault();
-
-        stopRecording();
-    }
-);
-
-
-recordButton.addEventListener(
-    "pointercancel",
-    () => {
-        stopRecording();
-    }
-);
-
-
-recordButton.addEventListener(
-    "pointerleave",
-    () => {
-        if (recording) {
-            stopRecording();
+    recordButton.addEventListener(
+        "click",
+        () => {
+            if (
+                recording
+            ) {
+                stopRecording();
+            } else {
+                startRecording();
+            }
         }
-    }
-);
-
-
-/* =========================================================
-   SPACEBAR
-========================================================= */
-
-document.addEventListener(
-    "keydown",
-    event => {
-        if (
-            event.code === "Space" &&
-            !event.repeat &&
-            !event.target.matches(
-                "input, textarea, button"
-            )
-        ) {
-            event.preventDefault();
-
-            startRecording();
-        }
-    }
-);
-
-
-document.addEventListener(
-    "keyup",
-    event => {
-        if (
-            event.code === "Space"
-        ) {
-            event.preventDefault();
-
-            stopRecording();
-        }
-    }
-);
+    );
+}
 
 
 /* =========================================================
@@ -1492,11 +1734,6 @@ async function transcribeWord() {
 
     recordButton.disabled =
         true;
-
-    /*
-        Pause timer while Groq processes
-        the recording.
-    */
 
     stopTimer();
 
@@ -1543,7 +1780,7 @@ async function transcribeWord() {
         if (!result.success) {
             throw new Error(
                 result.error ||
-                "Transcription failed."
+                "No speech detected."
             );
         }
 
@@ -1557,19 +1794,18 @@ async function transcribeWord() {
 
         if (!word) {
             showMessage(
-                "I couldn't understand a word.",
+                "I couldn't understand that.",
                 "bad"
             );
-
-            recordingStatus.textContent =
-                "Try again.";
-
-            startExistingTimer();
 
             return;
         }
 
-        checkWord(word);
+        lastSubmittedWord =
+            word;
+
+        submitWord(word);
+
     } catch (error) {
         console.error(
             "Transcription error:",
@@ -1585,14 +1821,18 @@ async function transcribeWord() {
         recordingStatus.textContent =
             "Try again.";
 
-        if (!gameOver) {
-            startExistingTimer();
-        }
     } finally {
         processing = false;
 
-        recordButton.disabled =
-            gameOver;
+        if (
+            gameStarted &&
+            !gameOver
+        ) {
+            recordButton.disabled =
+                false;
+
+            startExistingTimer();
+        }
     }
 }
 
@@ -1603,7 +1843,8 @@ async function transcribeWord() {
 
 function normalizeWord(text) {
     if (
-        typeof text !== "string"
+        typeof text !==
+        "string"
     ) {
         return "";
     }
@@ -1629,36 +1870,36 @@ function normalizeWord(text) {
         cleaned
             .split(" ")
             .map(word =>
-                word.replace(
-                    /^'+|'+$/g,
-                    ""
-                )
+                word
+                    .replace(
+                        /^'+|'+$/g,
+                        ""
+                    )
+                    .trim()
             )
             .filter(Boolean);
 
-    if (!words.length) {
+    if (
+        words.length === 0
+    ) {
         return "";
     }
 
-    /*
-        Whisper sometimes gives a short sentence
-        instead of exactly one word.
-
-        Prefer a word containing the chunk.
-    */
-
     const matching =
-        words.filter(word =>
-            selectedChunk &&
-            word.includes(
-                selectedChunk
-            )
+        words.filter(
+            word =>
+                word.includes(
+                    selectedChunk
+                )
         );
 
-    if (matching.length) {
+    if (
+        matching.length > 0
+    ) {
         matching.sort(
             (a, b) =>
-                b.length - a.length
+                b.length -
+                a.length
         );
 
         return matching[0];
@@ -1669,73 +1910,100 @@ function normalizeWord(text) {
 
 
 /* =========================================================
-   CHECK WORD
+   SUBMIT WORD
 ========================================================= */
 
-function checkWord(word) {
+function submitWord(word) {
     const lower =
-        word.toLowerCase();
+        normalizeWord(word);
+
+    if (!lower) return;
 
     if (
         usedWords.has(lower)
     ) {
-        showMessage(
-            `"${word.toUpperCase()}" was already used!`,
-            "bad"
+        showWordFailure(
+            "duplicate",
+            lower
         );
-
-        resultText.textContent =
-            "🚫 Already used";
-
-        resultText.className =
-            "result bad";
-
-        streak = 0;
-
-        updateStats();
-
-        recordingStatus.textContent =
-            "Try another word.";
-
-        startExistingTimer();
 
         return;
     }
 
     if (
-        !selectedChunk ||
         !lower.includes(
             selectedChunk
         )
     ) {
-        showMessage(
-            `"${word.toUpperCase()}" does not contain "${selectedChunk.toUpperCase()}".`,
-            "bad"
+        showWordFailure(
+            "missingChunk",
+            lower
         );
-
-        resultText.textContent =
-            `❌ Missing "${selectedChunk.toUpperCase()}"`;
-
-        resultText.className =
-            "result bad";
-
-        streak = 0;
-
-        updateStats();
-
-        recordingStatus.textContent =
-            "Try again!";
-
-        startExistingTimer();
 
         return;
     }
 
     /*
-        Valid word.
+       Multiplayer server gets the final
+       authority over the word.
     */
 
-    usedWords.add(lower);
+    if (roomCode) {
+        sendSocketMessage({
+            type: "word",
+            word: lower,
+            playerId,
+            name: playerName
+        });
+
+        /*
+           Don't advance the round locally yet.
+           The server confirms the word first.
+        */
+
+        stopTimer();
+
+        return;
+    }
+
+    acceptLocalWord(
+        lower
+    );
+}
+
+
+/* =========================================================
+   LOCAL WORD
+========================================================= */
+
+function acceptLocalWord(word) {
+    if (
+        usedWords.has(word)
+    ) {
+        showWordFailure(
+            "duplicate",
+            word
+        );
+
+        return;
+    }
+
+    if (
+        !word.includes(
+            selectedChunk
+        )
+    ) {
+        showWordFailure(
+            "missingChunk",
+            word
+        );
+
+        return;
+    }
+
+    usedWords.add(
+        word
+    );
 
     const points =
         10 +
@@ -1744,12 +2012,12 @@ function checkWord(word) {
             20
         );
 
-    score += points;
+    score +=
+        points;
 
     streak++;
 
     updateStats();
-
     renderUsedWords();
 
     showMessage(
@@ -1764,221 +2032,265 @@ function checkWord(word) {
         "result good";
 
     recordingStatus.textContent =
-        "Nice! Next word...";
-
-    /*
-        Send the word to the Worker.
-
-        The Worker is the authority on whether
-        the word is valid.
-    */
-
-    sendSocketMessage({
-        type: "word",
-        word: lower
-    });
+        "Nice! Next round...";
 
     stopTimer();
+
+    roundTransitionTimer =
+        setTimeout(
+            advanceRound,
+            700
+        );
 }
 
 
 /* =========================================================
-   WORD ACCEPTED
+   REMOTE WORD ACCEPTED
 ========================================================= */
 
-function handleWordAccepted(data) {
-    if (!data.word) {
-        return;
-    }
-
+function handleRemoteWordAccepted(
+    data
+) {
     const word =
-        String(data.word)
-            .toLowerCase()
-            .trim();
+        normalizeWord(
+            data.word
+        );
 
-    usedWords.add(word);
+    if (!word) return;
 
-    /*
-        If this was another player,
-        show their word.
-    */
+    usedWords.add(
+        word
+    );
 
     if (
-        data.playerId !== playerId
+        data.playerId ===
+        playerId
     ) {
+        if (
+            typeof data.points ===
+            "number"
+        ) {
+            score +=
+                data.points;
+        }
+
+        streak++;
+
+        updateStats();
+
+        renderUsedWords();
+
         showMessage(
-            `👥 Player used "${word.toUpperCase()}" +${data.points || 0}`,
+            `✅ ${word.toUpperCase()} works! +${data.points || 0}`,
             "good"
         );
 
         resultText.textContent =
-            `👥 ${word.toUpperCase()}`;
+            `✅ Contains "${selectedChunk.toUpperCase()}"`;
 
         resultText.className =
             "result good";
+
+        recordingStatus.textContent =
+            "Nice! Next round...";
+
+        stopTimer();
+
+        if (
+            typeof data.currentRound ===
+            "number"
+        ) {
+            currentRound =
+                data.currentRound;
+        }
+
+        if (
+            typeof data.totalRounds ===
+            "number"
+        ) {
+            totalRounds =
+                clampRounds(
+                    data.totalRounds
+                );
+        }
+
+        if (data.nextChunk) {
+            selectedChunk =
+                normalizeChunk(
+                    data.nextChunk
+                );
+
+            displayChunk();
+        }
+
+        if (
+            currentRound >=
+            totalRounds
+        ) {
+            finishGame();
+        } else {
+            roundTransitionTimer =
+                setTimeout(
+                    () => {
+                        if (
+                            data.nextChunk
+                        ) {
+                            timeLeft =
+                                TURN_TIME;
+
+                            updateTimer();
+
+                            updateRoundDisplay();
+
+                            startTimer();
+                        }
+                    },
+                    700
+                );
+        }
+
+        return;
     }
 
     /*
-        Server score is authoritative for
-        the player who submitted the word.
+       Another player successfully used
+       a word.
     */
 
-    if (
-        data.playerId === playerId
-    ) {
-        if (
-            data.game?.score?.[playerId] !==
-            undefined
-        ) {
-            score =
-                data.game.score[playerId];
-        } else if (
-            typeof data.points === "number"
-        ) {
-            /*
-                Don't double-add if the local
-                score already includes it.
-            */
-        }
-
-        if (
-            data.game?.streak?.[playerId] !==
-            undefined
-        ) {
-            streak =
-                data.game.streak[playerId];
-        }
-    }
+    showMessage(
+        `👥 ${data.name || "Player"} used "${word.toUpperCase()}"`,
+        "good"
+    );
 
     renderUsedWords();
-    updateStats();
 
-    /*
-        The host controls the next chunk.
-    */
+    if (
+        data.nextChunk
+    ) {
+        selectedChunk =
+            normalizeChunk(
+                data.nextChunk
+            );
 
-    if (isHost) {
-        setTimeout(() => {
-            if (!gameOver) {
-                chooseAndSendNextChunk();
-            }
-        }, 500);
+        displayChunk();
     }
+
+    if (
+        typeof data.currentRound ===
+        "number"
+    ) {
+        currentRound =
+            data.currentRound;
+    }
+
+    updateRoundDisplay();
 }
 
 
 /* =========================================================
-   WORD RESULT
+   SERVER WORD FAILURE
 ========================================================= */
 
-function handleWordResult(data) {
-    if (data.success) {
-        return;
-    }
+function handleServerWordFailure(
+    data
+) {
+    const word =
+        normalizeWord(
+            data.word ||
+            lastSubmittedWord
+        );
 
-    if (
-        data.reason ===
-        "duplicate"
-    ) {
+    showWordFailure(
+        data.reason,
+        word
+    );
+
+    startExistingTimer();
+}
+
+
+/* =========================================================
+   WORD FAILURE
+========================================================= */
+
+function showWordFailure(
+    reason,
+    word
+) {
+    if (reason === "duplicate") {
         showMessage(
-            `"${String(data.word || "").toUpperCase()}" was already used!`,
+            `"${word.toUpperCase()}" was already used!`,
             "bad"
         );
 
         resultText.textContent =
             "🚫 Already used";
-
-        resultText.className =
-            "result bad";
-
-        streak = 0;
-
-        updateStats();
-
-        startExistingTimer();
-
-        return;
-    }
-
-    if (
-        data.reason ===
-        "missingChunk"
-    ) {
+    } else {
         showMessage(
-            `"${String(data.word || "").toUpperCase()}" doesn't contain "${String(data.chunk || selectedChunk).toUpperCase()}".`,
+            `"${word.toUpperCase()}" does not contain "${selectedChunk.toUpperCase()}".`,
             "bad"
         );
 
         resultText.textContent =
-            "❌ Wrong word";
-
-        resultText.className =
-            "result bad";
-
-        streak = 0;
-
-        updateStats();
-
-        startExistingTimer();
+            `❌ Missing "${selectedChunk.toUpperCase()}"`;
     }
+
+    resultText.className =
+        "result bad";
+
+    streak = 0;
+
+    updateStats();
+
+    recordingStatus.textContent =
+        "Try another word.";
 }
 
 
 /* =========================================================
-   NEXT CHUNK
+   REMOTE GAME OVER
 ========================================================= */
 
-function chooseAndSendNextChunk() {
-    const useThree =
-        Math.random() < 0.25;
+function endGame(
+    text = "💥 BOOM!"
+) {
+    stopTimer();
 
-    const two =
-        [
-            "st","tr","ch","sh","th","ph",
-            "wh","bl","br","cl","cr","dr",
-            "fl","fr","gl","gr","pl","pr",
-            "sc","sk","sl","sm","sn","sp",
-            "sw","tw","wr","ck","ng","nd",
-            "nt","nk","mp","ll","ss","oo",
-            "ee","ea","ou","ow","ai","ay",
-            "oa","oi","oy","ar","er","ir",
-            "or","ur","an","en","in","on",
-            "un","at","et","it","ot","ut",
-            "re","le","me","ne"
-        ];
+    gameStarted = false;
+    gameOver = true;
 
-    const three =
-        [
-            "ing","and","the","ion","ere",
-            "ate","ent","est","for","her",
-            "his","not","are","was","all",
-            "out","one","our","you","but",
-            "can","had","has","new","too",
-            "get","day","man","top","car",
-            "dog","cat"
-        ];
+    recordButton.disabled =
+        true;
 
-    const list =
-        useThree
-            ? three
-            : two;
+    bomb?.classList.remove(
+        "warning"
+    );
 
-    const chunk =
-        list[
-            Math.floor(
-                Math.random() *
-                list.length
-            )
-        ];
+    bomb?.classList.add(
+        "explode"
+    );
 
-    /*
-        Worker accepts setChunk only from host.
-    */
+    resultText.textContent =
+        text;
 
-    sendSocketMessage({
-        type: "setChunk",
-        chunk
-    });
+    resultText.className =
+        "result bad";
+
+    recordingStatus.textContent =
+        "Game over.";
+
+    turnText.textContent =
+        "Game over!";
+
+    streak = 0;
+
+    updateStats();
+
+    setTimeout(() => {
+        bomb?.classList.remove(
+            "explode"
+        );
+    }, 600);
 }
 
 
@@ -1987,14 +2299,20 @@ function chooseAndSendNextChunk() {
 ========================================================= */
 
 function updateStats() {
-    scoreDisplay.textContent =
-        score;
+    if (scoreDisplay) {
+        scoreDisplay.textContent =
+            score;
+    }
 
-    streakDisplay.textContent =
-        streak;
+    if (streakDisplay) {
+        streakDisplay.textContent =
+            streak;
+    }
 
-    wordsUsedDisplay.textContent =
-        usedWords.size;
+    if (wordsUsedDisplay) {
+        wordsUsedDisplay.textContent =
+            usedWords.size;
+    }
 }
 
 
@@ -2003,6 +2321,8 @@ function updateStats() {
 ========================================================= */
 
 function renderUsedWords() {
+    if (!usedWordsDisplay) return;
+
     if (
         usedWords.size === 0
     ) {
@@ -2012,9 +2332,12 @@ function renderUsedWords() {
         return;
     }
 
-    usedWordsDisplay.innerHTML = "";
+    usedWordsDisplay.innerHTML =
+        "";
 
-    [...usedWords]
+    [
+        ...usedWords
+    ]
         .reverse()
         .forEach(word => {
             const element =
@@ -2036,84 +2359,166 @@ function renderUsedWords() {
 
 
 /* =========================================================
+   COPY ROOM
+========================================================= */
+
+if (copyRoomButton) {
+    copyRoomButton.addEventListener(
+        "click",
+        async () => {
+            if (!roomCode) return;
+
+            try {
+                await navigator.clipboard.writeText(
+                    roomCode
+                );
+
+                copyRoomButton.textContent =
+                    "✅ Copied!";
+
+                setTimeout(() => {
+                    copyRoomButton.textContent =
+                        "📋 Copy";
+                }, 1200);
+
+            } catch {
+                showMessage(
+                    "Couldn't copy room code.",
+                    "bad"
+                );
+            }
+        }
+    );
+}
+
+
+/* =========================================================
    COPY WORD
 ========================================================= */
 
-copyButton.addEventListener(
-    "click",
-    async () => {
-        const word =
-            transcript.textContent.trim();
+if (copyButton) {
+    copyButton.addEventListener(
+        "click",
+        async () => {
+            const word =
+                transcript.textContent
+                    .trim();
 
-        if (
-            !word ||
-            word === "—" ||
-            word === "???"
-        ) {
-            return;
-        }
+            if (
+                !word ||
+                word === "—" ||
+                word === "???"
+            ) {
+                return;
+            }
 
-        try {
-            await navigator.clipboard.writeText(
-                word
-            );
+            try {
+                await navigator.clipboard.writeText(
+                    word
+                );
 
-            copyButton.textContent =
-                "✅ Copied!";
-
-            setTimeout(() => {
                 copyButton.textContent =
-                    "📋 Copy Word";
-            }, 1200);
-        } catch {
-            showMessage(
-                "Couldn't copy the word.",
-                "bad"
-            );
+                    "✅ Copied!";
+
+                setTimeout(() => {
+                    copyButton.textContent =
+                        "📋 Copy Word";
+                }, 1200);
+
+            } catch {
+                showMessage(
+                    "Couldn't copy the word.",
+                    "bad"
+                );
+            }
         }
-    }
-);
+    );
+}
 
 
 /* =========================================================
    DOWNLOAD AUDIO
 ========================================================= */
 
-downloadButton.addEventListener(
-    "click",
-    () => {
-        if (!audioBlob) {
-            return;
+if (downloadButton) {
+    downloadButton.addEventListener(
+        "click",
+        () => {
+            if (!audioBlob) return;
+
+            const url =
+                URL.createObjectURL(
+                    audioBlob
+                );
+
+            const link =
+                document.createElement(
+                    "a"
+                );
+
+            link.href =
+                url;
+
+            link.download =
+                "word-bomb-word.webm";
+
+            document.body.appendChild(
+                link
+            );
+
+            link.click();
+
+            link.remove();
+
+            URL.revokeObjectURL(
+                url
+            );
         }
+    );
+}
 
-        const url =
-            URL.createObjectURL(
-                audioBlob
-            );
 
-        const link =
-            document.createElement(
-                "a"
-            );
+/* =========================================================
+   BUTTONS
+========================================================= */
 
-        link.href = url;
+if (createRoomButton) {
+    createRoomButton.addEventListener(
+        "click",
+        createRoom
+    );
+}
 
-        link.download =
-            "word-bomb-word.webm";
 
-        document.body.appendChild(
-            link
-        );
+if (joinRoomButton) {
+    joinRoomButton.addEventListener(
+        "click",
+        joinRoom
+    );
+}
 
-        link.click();
 
-        link.remove();
+if (roomInput) {
+    roomInput.addEventListener(
+        "keydown",
+        event => {
+            if (
+                event.key ===
+                "Enter"
+            ) {
+                joinRoom();
+            }
+        }
+    );
+}
 
-        URL.revokeObjectURL(
-            url
-        );
-    }
-);
+
+if (newGameButton) {
+    newGameButton.addEventListener(
+        "click",
+        newGame
+    );
+}
 
 
 /* =========================================================
@@ -2124,6 +2529,8 @@ function showMessage(
     text,
     type = ""
 ) {
+    if (!message) return;
+
     message.textContent =
         text;
 
@@ -2133,6 +2540,8 @@ function showMessage(
 
 
 function hideMessage() {
+    if (!message) return;
+
     message.textContent =
         "";
 
@@ -2165,13 +2574,8 @@ function cleanupStream() {
 window.addEventListener(
     "beforeunload",
     () => {
-        intentionalDisconnect = true;
-
-        clearTimeout(
-            reconnectTimer
-        );
-
-        stopTimer();
+        intentionalDisconnect =
+            true;
 
         cleanupStream();
 
@@ -2185,68 +2589,36 @@ window.addEventListener(
 
 
 /* =========================================================
-   BUTTONS
-========================================================= */
-
-createRoomButton.addEventListener(
-    "click",
-    createRoom
-);
-
-joinRoomButton.addEventListener(
-    "click",
-    joinRoom
-);
-
-roomInput.addEventListener(
-    "keydown",
-    event => {
-        if (event.key === "Enter") {
-            joinRoom();
-        }
-    }
-);
-
-newGameButton.addEventListener(
-    "click",
-    newGame
-);
-
-
-/* =========================================================
-   STARTUP
+   INITIALIZE
 ========================================================= */
 
 playerId =
-    getPlayerId();
+    localStorage.getItem(
+        "voiceBombPlayerId"
+    );
+
+if (!playerId) {
+    playerId =
+        generatePlayerId();
+
+    localStorage.setItem(
+        "voiceBombPlayerId",
+        playerId
+    );
+}
 
 playerName =
     getPlayerName();
 
-newGameButton.disabled =
-    true;
+totalRounds =
+    MIN_ROUNDS;
 
-recordButton.disabled =
-    true;
-
-downloadButton.disabled =
-    true;
-
-timerDisplay.textContent =
-    TURN_TIME.toFixed(1);
-
-timerBar.style.width =
-    "100%";
-
-setConnectionStatus(
-    "🟡 Not connected"
-);
+updateStats();
+updateTimer();
+displayChunk();
+updateRoundDisplay();
+updateHostUI();
 
 console.log(
-    "[Voice Bomb] Ready.",
-    {
-        playerId,
-        playerName,
-        worker: WORKER_URL
-    }
+    "[Voice Bomb] script.js loaded."
 );
