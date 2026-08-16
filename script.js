@@ -1,5 +1,5 @@
 const WORKER_URL = "https://workerjs.donaldjegede29.workers.dev";
-const TURN_TIME = 20;
+const TURN_TIME = 60;
 const MIN_ROUNDS = 5;
 const MAX_ROUNDS = 250;
 
