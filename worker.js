@@ -1,5 +1,9 @@
 const GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
 
+const TURN_TIME = 20;
+const MIN_ROUNDS = 5;
+const MAX_ROUNDS = 250;
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -11,15 +15,30 @@ export default {
       });
     }
 
-    if (url.pathname === "/room") {
-      return handleRoom(request, env);
-    }
-
+    /*
+      Voice transcription
+    */
     if (request.method === "POST" && url.pathname === "/") {
       return handleTranscription(request, env);
     }
 
-    return json({ error: "Not found" }, 404);
+    /*
+      Multiplayer room
+
+      Supports:
+      /room?room=ABCD
+      /room/ABCD
+    */
+    if (
+      url.pathname === "/room" ||
+      url.pathname.startsWith("/room/")
+    ) {
+      return handleRoom(request, env);
+    }
+
+    return json({
+      error: "Not found"
+    }, 404);
   }
 };
 
@@ -57,7 +76,6 @@ async function handleTranscription(request, env) {
     }
 
     const audioBuffer = await file.arrayBuffer();
-
     const contentType = file.type || "audio/webm";
 
     const filename = getSafeFilename(
@@ -75,25 +93,10 @@ async function handleTranscription(request, env) {
       }
     );
 
-    groqForm.append(
-      "file",
-      audioFile
-    );
-
-    groqForm.append(
-      "model",
-      "whisper-large-v3"
-    );
-
-    groqForm.append(
-      "language",
-      "en"
-    );
-
-    groqForm.append(
-      "response_format",
-      "json"
-    );
+    groqForm.append("file", audioFile);
+    groqForm.append("model", "whisper-large-v3");
+    groqForm.append("language", "en");
+    groqForm.append("response_format", "json");
 
     groqForm.append(
       "prompt",
@@ -179,8 +182,29 @@ async function handleTranscription(request, env) {
 async function handleRoom(request, env) {
   const url = new URL(request.url);
 
-  let roomId =
-    url.searchParams.get("room") || "default";
+  let roomId = "";
+
+  /*
+    Accept:
+
+    /room?room=ABCD
+
+    OR
+
+    /room/ABCD
+  */
+
+  if (url.pathname.startsWith("/room/")) {
+    roomId =
+      url.pathname
+        .slice("/room/".length)
+        .split("/")[0];
+  }
+
+  if (!roomId) {
+    roomId =
+      url.searchParams.get("room") || "";
+  }
 
   roomId = roomId
     .trim()
@@ -215,11 +239,19 @@ export class GameRoom {
     this.game = {
       started: false,
       hostId: null,
+
+      rounds: MIN_ROUNDS,
+      currentRound: 0,
+
       score: {},
       streak: {},
+
       usedWords: [],
+
       chunk: null,
-      timeLeft: 20,
+
+      timeLeft: TURN_TIME,
+
       gameOver: false
     };
 
@@ -272,6 +304,10 @@ export class GameRoom {
     );
   }
 
+  /* =======================================================
+     WEBSOCKET
+  ======================================================= */
+
   async handleWebSocket(request) {
     let pair;
 
@@ -294,7 +330,16 @@ export class GameRoom {
     const client = pair[0];
     const server = pair[1];
 
+    const url = new URL(request.url);
+
+    const requestedPlayerId =
+      url.searchParams.get("player");
+
+    const requestedName =
+      url.searchParams.get("name");
+
     const playerId =
+      requestedPlayerId ||
       crypto.randomUUID();
 
     try {
@@ -313,10 +358,18 @@ export class GameRoom {
       );
     }
 
+    /*
+      Don't duplicate a player if the client reconnects
+      using the same player ID.
+    */
+
     const player = {
       id: playerId,
       name:
-        `Player ${this.players.size + 1}`,
+        sanitizeName(
+          requestedName ||
+          `Player ${this.players.size + 1}`
+        ),
       joinedAt: Date.now()
     };
 
@@ -345,25 +398,27 @@ export class GameRoom {
       server,
       {
         type: "welcome",
+
         player,
+
         isHost:
           this.game.hostId === playerId,
+
         game:
-          this.getGameState()
+          this.getGameState(),
+
+        players:
+          this.getPlayers()
       }
     );
 
-    this.broadcast(
-      {
-        type: "playerJoined",
-        player,
-        players:
-          this.getPlayers(),
-        hostId:
-          this.game.hostId
-      },
-      playerId
-    );
+    this.broadcast({
+      type: "players",
+      players:
+        this.getPlayers(),
+      hostId:
+        this.game.hostId
+    }, playerId);
 
     server.addEventListener(
       "message",
@@ -419,6 +474,10 @@ export class GameRoom {
     );
   }
 
+  /* =======================================================
+     MESSAGES
+  ======================================================= */
+
   async handleMessage(
     playerId,
     raw
@@ -436,6 +495,8 @@ export class GameRoom {
       return;
     }
 
+    /* PING */
+
     if (message.type === "ping") {
       this.send(
         this.sessions.get(playerId),
@@ -447,6 +508,8 @@ export class GameRoom {
       return;
     }
 
+    /* SET NAME */
+
     if (message.type === "setName") {
       const player =
         this.players.get(playerId);
@@ -456,11 +519,9 @@ export class GameRoom {
       }
 
       const name =
-        String(
-          message.name || ""
-        )
-        .trim()
-        .slice(0, 20);
+        sanitizeName(
+          message.name
+        );
 
       if (name) {
         player.name = name;
@@ -477,6 +538,8 @@ export class GameRoom {
       return;
     }
 
+    /* NEW GAME */
+
     if (message.type === "newGame") {
       if (
         playerId !==
@@ -484,13 +547,25 @@ export class GameRoom {
       ) {
         this.sendError(
           playerId,
-          "Only the host can start a new game."
+          "Only the host can start a game."
         );
 
         return;
       }
 
-      this.startNewGame();
+      let rounds =
+        Number(message.rounds);
+
+      if (!Number.isFinite(rounds)) {
+        rounds = MIN_ROUNDS;
+      }
+
+      rounds =
+        clampRounds(rounds);
+
+      await this.startNewGame(
+        rounds
+      );
 
       this.broadcast({
         type: "gameStarted",
@@ -501,6 +576,55 @@ export class GameRoom {
       return;
     }
 
+    /* SET ROUNDS */
+
+    if (message.type === "setRounds") {
+      if (
+        playerId !==
+        this.game.hostId
+      ) {
+        this.sendError(
+          playerId,
+          "Only the host can change the rounds."
+        );
+
+        return;
+      }
+
+      if (this.game.started) {
+        this.sendError(
+          playerId,
+          "You can't change rounds while a game is running."
+        );
+
+        return;
+      }
+
+      let rounds =
+        Number(message.rounds);
+
+      if (!Number.isFinite(rounds)) {
+        rounds = MIN_ROUNDS;
+      }
+
+      rounds =
+        clampRounds(rounds);
+
+      this.game.rounds =
+        rounds;
+
+      await this.saveGame();
+
+      this.broadcast({
+        type: "roundsChanged",
+        rounds
+      });
+
+      return;
+    }
+
+    /* SET CHUNK */
+
     if (message.type === "setChunk") {
       if (
         playerId !==
@@ -510,12 +634,9 @@ export class GameRoom {
       }
 
       const chunk =
-        String(
-          message.chunk || ""
-        )
-        .toLowerCase()
-        .replace(/[^a-z]/g, "")
-        .slice(0, 3);
+        normalizeChunk(
+          message.chunk
+        );
 
       if (!chunk) {
         return;
@@ -534,6 +655,8 @@ export class GameRoom {
       return;
     }
 
+    /* WORD */
+
     if (message.type === "word") {
       await this.handleWord(
         playerId,
@@ -543,6 +666,8 @@ export class GameRoom {
       return;
     }
 
+    /* GAME OVER */
+
     if (message.type === "gameOver") {
       if (
         playerId !==
@@ -551,21 +676,18 @@ export class GameRoom {
         return;
       }
 
-      this.game.gameOver =
-        true;
+      await this.finishGame(
+        message.reason ||
+        "host"
+      );
 
-      this.game.started =
-        false;
-
-      await this.saveGame();
-
-      this.broadcast({
-        type: "gameOver",
-        game:
-          this.getGameState()
-      });
+      return;
     }
   }
+
+  /* =======================================================
+     WORD
+  ======================================================= */
 
   async handleWord(
     playerId,
@@ -594,6 +716,8 @@ export class GameRoom {
       return;
     }
 
+    /* DUPLICATE */
+
     if (
       this.game.usedWords.includes(
         word
@@ -612,7 +736,11 @@ export class GameRoom {
       return;
     }
 
-    if (!word.includes(chunk)) {
+    /* MISSING CHUNK */
+
+    if (
+      !word.includes(chunk)
+    ) {
       this.send(
         this.sessions.get(playerId),
         {
@@ -627,18 +755,22 @@ export class GameRoom {
       return;
     }
 
+    /* ACCEPT WORD */
+
     this.game.usedWords.push(
       word
     );
 
     if (
-      !this.game.score[playerId]
+      typeof this.game.score[playerId] !==
+      "number"
     ) {
       this.game.score[playerId] = 0;
     }
 
     if (
-      !this.game.streak[playerId]
+      typeof this.game.streak[playerId] !==
+      "number"
     ) {
       this.game.streak[playerId] = 0;
     }
@@ -655,41 +787,163 @@ export class GameRoom {
 
     this.game.streak[playerId]++;
 
+    /*
+      The player successfully completed
+      the current round.
+    */
+
+    const completedRound =
+      this.game.currentRound;
+
+    /*
+      LAST ROUND
+    */
+
+    if (
+      completedRound >=
+      this.game.rounds
+    ) {
+      await this.saveGame();
+
+      this.broadcast({
+        type: "wordAccepted",
+        playerId,
+        word,
+        points,
+
+        currentRound:
+          completedRound,
+
+        totalRounds:
+          this.game.rounds,
+
+        game:
+          this.getGameState()
+      });
+
+      await this.finishGame(
+        "roundsComplete"
+      );
+
+      return;
+    }
+
+    /*
+      NEXT ROUND
+    */
+
+    this.game.currentRound++;
+
+    this.game.chunk =
+      randomChunk();
+
+    this.game.timeLeft =
+      TURN_TIME;
+
     await this.saveGame();
 
     this.broadcast({
       type: "wordAccepted",
+
       playerId,
       word,
       points,
+
+      currentRound:
+        this.game.currentRound,
+
+      totalRounds:
+        this.game.rounds,
+
+      nextChunk:
+        this.game.chunk,
+
+      timeLeft:
+        TURN_TIME,
+
       game:
         this.getGameState()
     });
   }
 
-  startNewGame() {
-    this.game.started = true;
-    this.game.gameOver = false;
+  /* =======================================================
+     START GAME
+  ======================================================= */
 
-    this.game.usedWords = [];
-    this.game.score = {};
-    this.game.streak = {};
+  async startNewGame(rounds) {
+    rounds =
+      clampRounds(rounds);
 
-    this.game.timeLeft = 20;
-    this.game.chunk = randomChunk();
+    this.game.started =
+      true;
+
+    this.game.gameOver =
+      false;
+
+    this.game.rounds =
+      rounds;
+
+    this.game.currentRound =
+      1;
+
+    this.game.usedWords =
+      [];
+
+    this.game.score =
+      {};
+
+    this.game.streak =
+      {};
+
+    this.game.timeLeft =
+      TURN_TIME;
+
+    this.game.chunk =
+      randomChunk();
 
     for (
       const playerId of
       this.players.keys()
     ) {
-      this.game.score[playerId] = 0;
-      this.game.streak[playerId] = 0;
+      this.game.score[playerId] =
+        0;
+
+      this.game.streak[playerId] =
+        0;
     }
 
-    this.saveGame().catch(
-      console.error
-    );
+    await this.saveGame();
   }
+
+  /* =======================================================
+     FINISH GAME
+  ======================================================= */
+
+  async finishGame(reason) {
+    this.game.started =
+      false;
+
+    this.game.gameOver =
+      true;
+
+    this.game.timeLeft =
+      0;
+
+    await this.saveGame();
+
+    this.broadcast({
+      type: "gameOver",
+
+      reason,
+
+      game:
+        this.getGameState()
+    });
+  }
+
+  /* =======================================================
+     REMOVE PLAYER
+  ======================================================= */
 
   async removePlayer(playerId) {
     if (
@@ -736,7 +990,8 @@ export class GameRoom {
           );
         }
       } else {
-        this.game.hostId = null;
+        this.game.hostId =
+          null;
       }
     }
 
@@ -744,26 +999,38 @@ export class GameRoom {
 
     this.broadcast({
       type: "playerLeft",
+
       playerId,
+
       players:
         this.getPlayers(),
+
       hostId:
         this.game.hostId
     });
   }
+
+  /* =======================================================
+     STATE
+  ======================================================= */
 
   getPlayers() {
     return [
       ...this.players.values()
     ].map(player => ({
       id: player.id,
-      name: player.name
+      name: player.name,
+
+      isHost:
+        player.id ===
+        this.game.hostId
     }));
   }
 
   getGameState() {
     return {
       ...this.game,
+
       players:
         this.getPlayers()
     };
@@ -773,6 +1040,7 @@ export class GameRoom {
     return json({
       players:
         this.getPlayers(),
+
       game:
         this.getGameState()
     });
@@ -784,6 +1052,10 @@ export class GameRoom {
       this.game
     );
   }
+
+  /* =======================================================
+     SOCKET HELPERS
+  ======================================================= */
 
   send(socket, data) {
     if (!socket) {
@@ -883,6 +1155,11 @@ const THREE_LETTER_CHUNKS = [
 ];
 
 function randomChunk() {
+  /*
+    75% chance of 2 letters
+    25% chance of 3 letters
+  */
+
   const useThree =
     Math.random() < 0.25;
 
@@ -898,6 +1175,26 @@ function randomChunk() {
     )
   ];
 }
+
+function normalizeChunk(chunk) {
+  if (
+    typeof chunk !== "string"
+  ) {
+    return "";
+  }
+
+  return chunk
+    .toLowerCase()
+    .replace(
+      /[^a-z]/g,
+      ""
+    )
+    .slice(0, 3);
+}
+
+/* =========================================================
+   WORD NORMALIZATION
+========================================================= */
 
 function normalizeServerWord(text) {
   if (
@@ -921,7 +1218,39 @@ function normalizeServerWord(text) {
 }
 
 /* =========================================================
-   HELPERS
+   ROUND HELPERS
+========================================================= */
+
+function clampRounds(value) {
+  return Math.max(
+    MIN_ROUNDS,
+    Math.min(
+      MAX_ROUNDS,
+      Math.round(value)
+    )
+  );
+}
+
+/* =========================================================
+   PLAYER HELPERS
+========================================================= */
+
+function sanitizeName(name) {
+  const cleaned =
+    String(name || "")
+      .trim()
+      .replace(
+        /[^a-zA-Z0-9 _-]/g,
+        ""
+      )
+      .slice(0, 20);
+
+  return cleaned ||
+    "Player";
+}
+
+/* =========================================================
+   FILE HELPERS
 ========================================================= */
 
 function getSafeFilename(
@@ -951,17 +1280,28 @@ function getSafeFilename(
   return `recording${extension}`;
 }
 
+/* =========================================================
+   CORS
+========================================================= */
+
 function corsHeaders() {
   return {
     "Access-Control-Allow-Origin": "*",
+
     "Access-Control-Allow-Methods":
       "GET, POST, OPTIONS",
+
     "Access-Control-Allow-Headers":
       "Content-Type",
+
     "Access-Control-Max-Age":
       "86400"
   };
 }
+
+/* =========================================================
+   JSON
+========================================================= */
 
 function json(
   data,
@@ -971,9 +1311,11 @@ function json(
     JSON.stringify(data),
     {
       status,
+
       headers: {
         "Content-Type":
           "application/json; charset=utf-8",
+
         ...corsHeaders()
       }
     }

@@ -1,5 +1,5 @@
 const WORKER_URL = "https://workerjs.donaldjegede29.workers.dev";
-const TURN_TIME = 60;
+const TURN_TIME = 20;
 const MIN_ROUNDS = 5;
 const MAX_ROUNDS = 250;
 
@@ -27,29 +27,15 @@ const bomb = document.getElementById("bomb");
 const recordingStatus = document.getElementById("recordingStatus");
 const message = document.getElementById("message");
 const usedWordsDisplay = document.getElementById("usedWords");
-
 const turnText = document.getElementById("turnText");
 
-const createRoomButton =
-    document.getElementById("createRoomButton");
-
-const joinRoomButton =
-    document.getElementById("joinRoomButton");
-
-const roomInput =
-    document.getElementById("roomInput");
-
-const roomInfo =
-    document.getElementById("roomInfo");
-
-const roomCodeDisplay =
-    document.getElementById("roomCode");
-
-const copyRoomButton =
-    document.getElementById("copyRoomButton");
-
-const playersDisplay =
-    document.getElementById("players");
+const createRoomButton = document.getElementById("createRoomButton");
+const joinRoomButton = document.getElementById("joinRoomButton");
+const roomInput = document.getElementById("roomInput");
+const roomInfo = document.getElementById("roomInfo");
+const roomCodeDisplay = document.getElementById("roomCode");
+const copyRoomButton = document.getElementById("copyRoomButton");
+const playersDisplay = document.getElementById("players");
 
 
 /* =========================================================
@@ -57,14 +43,12 @@ const playersDisplay =
 ========================================================= */
 
 let socket = null;
-
 let roomCode = "";
 let playerId = "";
 let playerName = "";
 
 let connected = false;
 let isHost = false;
-
 let intentionalDisconnect = false;
 let reconnectTimer = null;
 
@@ -83,20 +67,16 @@ let score = 0;
 let streak = 0;
 
 let selectedChunk = "";
-
 let usedWords = new Set();
 
 let currentRound = 0;
-let totalRounds = 5;
+let totalRounds = MIN_ROUNDS;
 
 let timeLeft = TURN_TIME;
 let timerInterval = null;
 
 let currentPlayers = [];
-
 let lastSubmittedWord = "";
-
-let roundTransitionTimer = null;
 
 
 /* =========================================================
@@ -104,102 +84,21 @@ let roundTransitionTimer = null;
 ========================================================= */
 
 const CHUNKS = [
-    "ea",
-    "er",
-    "st",
-    "tr",
-    "ch",
-    "sh",
-    "th",
-    "ph",
-    "wh",
-    "bl",
-    "br",
-    "cl",
-    "cr",
-    "dr",
-    "fl",
-    "fr",
-    "gl",
-    "gr",
-    "pl",
-    "pr",
-    "sc",
-    "sk",
-    "sl",
-    "sm",
-    "sn",
-    "sp",
-    "sw",
-    "tw",
-    "wr",
-    "ck",
-    "ng",
-    "nd",
-    "nt",
-    "nk",
-    "mp",
-    "ll",
-    "ss",
-    "oo",
-    "ee",
-    "ou",
-    "ow",
-    "ai",
-    "ay",
-    "oa",
-    "oi",
-    "oy",
-    "ar",
-    "ir",
-    "or",
-    "ur",
-    "an",
-    "en",
-    "in",
-    "on",
-    "un",
-    "at",
-    "et",
-    "it",
-    "ot",
-    "ut",
-    "re",
-    "le",
-    "me",
-    "ne",
-    "ing",
-    "and",
-    "the",
-    "ion",
-    "ere",
-    "ate",
-    "ent",
-    "est",
-    "for",
-    "her",
-    "his",
-    "not",
-    "are",
-    "was",
-    "all",
-    "out",
-    "one",
-    "our",
-    "you",
-    "but",
-    "can",
-    "had",
-    "has",
-    "new",
-    "too",
-    "get",
-    "day",
-    "man",
-    "top",
-    "car",
-    "dog",
-    "cat"
+    "st","tr","ch","sh","th","ph","wh",
+    "bl","br","cl","cr","dr","fl","fr",
+    "gl","gr","pl","pr","sc","sk","sl",
+    "sm","sn","sp","sw","tw","wr","ck",
+    "ng","nd","nt","nk","mp","ll","ss",
+    "oo","ee","ea","ou","ow","ai","ay",
+    "oa","oi","oy","ar","er","ir","or",
+    "ur","an","en","in","on","un","at",
+    "et","it","ot","ut","re","le","me","ne",
+    "ing","and","the","ion","ere","ate",
+    "ent","est","for","her","his","not",
+    "are","was","all","out","one","our",
+    "you","but","can","had","has","new",
+    "too","get","day","man","top","car",
+    "dog","cat"
 ];
 
 
@@ -208,26 +107,15 @@ const CHUNKS = [
 ========================================================= */
 
 function generatePlayerId() {
-    return (
-        "p_" +
-        crypto.randomUUID()
-    );
+    return "p_" + crypto.randomUUID();
 }
 
-
 function getPlayerName() {
-    let name =
-        localStorage.getItem(
-            "voiceBombName"
-        );
+    let name = localStorage.getItem("voiceBombName");
 
     if (!name) {
         name = "Player";
-
-        localStorage.setItem(
-            "voiceBombName",
-            name
-        );
+        localStorage.setItem("voiceBombName", name);
     }
 
     return name;
@@ -239,18 +127,11 @@ function getPlayerName() {
 ========================================================= */
 
 function generateRoomCode() {
-    const chars =
-        "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     let code = "";
 
     for (let i = 0; i < 4; i++) {
-        code +=
-            chars[
-                Math.floor(
-                    Math.random() * chars.length
-                )
-            ];
+        code += chars[Math.floor(Math.random() * chars.length)];
     }
 
     return code;
@@ -258,13 +139,12 @@ function generateRoomCode() {
 
 
 /* =========================================================
-   CONNECTION URL
+   WEBSOCKET
 ========================================================= */
 
 function getWebSocketURL() {
     return (
-        "wss://workerjs.donaldjegede29.workers.dev" +
-        "/room/" +
+        "wss://workerjs.donaldjegede29.workers.dev/room/" +
         encodeURIComponent(roomCode) +
         "?player=" +
         encodeURIComponent(playerId) +
@@ -273,26 +153,13 @@ function getWebSocketURL() {
     );
 }
 
-
-/* =========================================================
-   CONNECTION STATUS
-========================================================= */
-
-function setConnectionStatus(
-    text,
-    type = ""
-) {
-    const element =
-        document.getElementById(
-            "connectionStatus"
-        );
+function setConnectionStatus(text, type = "") {
+    const element = document.getElementById("connectionStatus");
 
     if (!element) return;
 
     element.textContent = text;
-
-    element.className =
-        "connection-status";
+    element.className = "connection-status";
 
     if (type) {
         element.classList.add(type);
@@ -301,67 +168,35 @@ function setConnectionStatus(
 
 
 /* =========================================================
-   CREATE ROOM
+   CREATE / JOIN ROOM
 ========================================================= */
 
 function createRoom() {
     if (connected) {
-        showMessage(
-            "You're already in a room.",
-            "bad"
-        );
-
+        showMessage("You're already in a room.", "bad");
         return;
     }
 
-    roomCode =
-        generateRoomCode();
-
+    roomCode = generateRoomCode();
     isHost = true;
 
     connectToRoom();
 }
 
-
-/* =========================================================
-   JOIN ROOM
-========================================================= */
-
 function joinRoom() {
     if (connected) {
-        showMessage(
-            "You're already in a room.",
-            "bad"
-        );
-
+        showMessage("You're already in a room.", "bad");
         return;
     }
 
-    const code =
-        roomInput.value
-            .trim()
-            .toUpperCase();
-
-    if (!code) {
-        showMessage(
-            "Enter a room code.",
-            "bad"
-        );
-
-        return;
-    }
+    const code = roomInput.value.trim().toUpperCase();
 
     if (!/^[A-Z0-9]{4}$/.test(code)) {
-        showMessage(
-            "Room codes are 4 characters.",
-            "bad"
-        );
-
+        showMessage("Room codes are exactly 4 characters.", "bad");
         return;
     }
 
     roomCode = code;
-
     isHost = false;
 
     connectToRoom();
@@ -376,7 +211,6 @@ function connectToRoom() {
     if (!roomCode) return;
 
     clearTimeout(reconnectTimer);
-
     intentionalDisconnect = false;
 
     if (socket) {
@@ -385,101 +219,44 @@ function connectToRoom() {
         } catch {}
     }
 
-    setConnectionStatus(
-        "🟡 Connecting..."
-    );
-
-    const url =
-        getWebSocketURL();
-
-    console.log(
-        "[Voice Bomb] Connecting to:",
-        url
-    );
+    setConnectionStatus("🟡 Connecting...");
 
     try {
-        socket =
-            new WebSocket(url);
+        socket = new WebSocket(getWebSocketURL());
     } catch (error) {
-        console.error(
-            "WebSocket creation error:",
-            error
-        );
-
-        setConnectionStatus(
-            "🔴 Connection failed",
-            "bad"
-        );
-
+        console.error(error);
+        setConnectionStatus("🔴 Connection failed", "bad");
         return;
     }
 
     socket.onopen = () => {
-        console.log(
-            "[Voice Bomb] Connected!"
-        );
-
         connected = true;
 
-        setConnectionStatus(
-            "🟢 Connected",
-            "good"
-        );
+        setConnectionStatus("🟢 Connected", "good");
 
         showRoom();
 
-        showMessage(
-            `Connected to room ${roomCode}!`,
-            "good"
-        );
-
         sendSocketMessage({
-            type: "join",
-            room: roomCode,
-            playerId,
-            name: playerName,
-            host: isHost
+            type: "setName",
+            name: playerName
         });
 
         updateHostUI();
-
-        if (recordButton) {
-            recordButton.disabled =
-                !gameStarted || gameOver;
-        }
     };
 
     socket.onmessage = event => {
-        handleSocketMessage(
-            event.data
-        );
+        handleSocketMessage(event.data);
     };
 
     socket.onerror = error => {
-        console.error(
-            "[Voice Bomb] WebSocket error:",
-            error
-        );
-
-        setConnectionStatus(
-            "🔴 Connection error",
-            "bad"
-        );
+        console.error("[Voice Bomb] WebSocket error:", error);
+        setConnectionStatus("🔴 Connection error", "bad");
     };
 
-    socket.onclose = event => {
-        console.log(
-            "[Voice Bomb] WebSocket closed:",
-            event.code,
-            event.reason
-        );
-
+    socket.onclose = () => {
         connected = false;
 
-        setConnectionStatus(
-            "🔴 Disconnected",
-            "bad"
-        );
+        setConnectionStatus("🔴 Disconnected", "bad");
 
         if (!intentionalDisconnect) {
             scheduleReconnect();
@@ -487,77 +264,25 @@ function connectToRoom() {
     };
 }
 
-
-/* =========================================================
-   RECONNECT
-========================================================= */
-
 function scheduleReconnect() {
-    clearTimeout(
-        reconnectTimer
-    );
+    clearTimeout(reconnectTimer);
 
-    reconnectTimer =
-        setTimeout(() => {
-            if (
-                roomCode &&
-                !connected &&
-                !intentionalDisconnect
-            ) {
-                connectToRoom();
-            }
-        }, 2500);
+    reconnectTimer = setTimeout(() => {
+        if (roomCode && !connected && !intentionalDisconnect) {
+            connectToRoom();
+        }
+    }, 2500);
 }
-
-
-/* =========================================================
-   DISCONNECT
-========================================================= */
-
-function disconnectRoom() {
-    intentionalDisconnect = true;
-
-    clearTimeout(
-        reconnectTimer
-    );
-
-    if (socket) {
-        try {
-            socket.close();
-        } catch {}
-    }
-
-    socket = null;
-
-    connected = false;
-}
-
-
-/* =========================================================
-   SEND
-========================================================= */
 
 function sendSocketMessage(data) {
-    if (
-        !socket ||
-        socket.readyState !==
-            WebSocket.OPEN
-    ) {
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
         return false;
     }
 
     try {
-        socket.send(
-            JSON.stringify(data)
-        );
-
+        socket.send(JSON.stringify(data));
         return true;
-    } catch (error) {
-        console.error(
-            "WebSocket send failed:",
-            error
-        );
-
+    } catch {
         return false;
     }
 }
@@ -568,258 +293,136 @@ function sendSocketMessage(data) {
 ========================================================= */
 
 function handleSocketMessage(raw) {
-    console.log(
-        "[Voice Bomb] Server:",
-        raw
-    );
-
     let data;
 
     try {
-        data =
-            typeof raw === "string"
-                ? JSON.parse(raw)
-                : raw;
-    } catch (error) {
-        console.error(
-            "Invalid server message:",
-            raw
-        );
-
+        data = JSON.parse(raw);
+    } catch {
+        console.error("Invalid server message:", raw);
         return;
     }
 
     if (!data) return;
 
-    const type =
-        String(
-            data.type ||
-            data.event ||
-            ""
-        ).toLowerCase();
-
-
-    /* WELCOME */
+    const type = String(data.type || "").toLowerCase();
 
     if (type === "welcome") {
         connected = true;
 
         if (data.player) {
-            if (data.player.id) {
-                playerId =
-                    data.player.id;
-            }
-
-            if (data.player.name) {
-                playerName =
-                    data.player.name;
-            }
+            playerId = data.player.id || playerId;
+            playerName = data.player.name || playerName;
         }
 
-        if (
-            typeof data.isHost ===
-            "boolean"
-        ) {
-            isHost =
-                data.isHost;
+        if (typeof data.isHost === "boolean") {
+            isHost = data.isHost;
+        }
+
+        if (data.players) {
+            currentPlayers = data.players;
+            renderPlayers(currentPlayers);
         }
 
         if (data.game) {
-            applyServerGameState(
-                data.game
-            );
+            applyServerGameState(data.game);
         }
 
-        if (data.players) {
-            currentPlayers =
-                data.players;
-
-            renderPlayers(
-                currentPlayers
-            );
-        }
-
+        showRoom();
         updateHostUI();
-
         return;
     }
-
-
-    /* NEW PLAYER */
-
-    if (
-        type === "playerjoined"
-    ) {
-        if (data.players) {
-            currentPlayers =
-                data.players;
-
-            renderPlayers(
-                currentPlayers
-            );
-        }
-
-        const player =
-            data.player;
-
-        if (
-            player &&
-            player.id !== playerId
-        ) {
-            showMessage(
-                `👋 ${player.name || "A new player"} joined!`,
-                "good"
-            );
-        }
-
-        return;
-    }
-
-
-    /* PLAYER LIST */
 
     if (type === "players") {
-        currentPlayers =
-            data.players || [];
+        currentPlayers = data.players || [];
+        renderPlayers(currentPlayers);
 
-        renderPlayers(
-            currentPlayers
-        );
+        if (data.hostId) {
+            isHost = data.hostId === playerId;
+            updateHostUI();
+        }
 
         return;
     }
 
-
-    /* PLAYER LEFT */
+    if (type === "playerjoined") {
+        currentPlayers = data.players || [];
+        renderPlayers(currentPlayers);
+        return;
+    }
 
     if (type === "playerleft") {
-        currentPlayers =
-            data.players || [];
+        currentPlayers = data.players || [];
+        renderPlayers(currentPlayers);
 
-        renderPlayers(
-            currentPlayers
-        );
+        if (data.hostId) {
+            isHost = data.hostId === playerId;
+            updateHostUI();
+        }
 
         return;
     }
-
-
-    /* HOST CHANGED */
 
     if (type === "becamehost") {
         isHost = true;
-
-        showMessage(
-            "👑 You are now the host!",
-            "good"
-        );
-
+        showMessage("👑 You are now the host!", "good");
         updateHostUI();
-
         return;
     }
 
+    if (type === "roundschanged") {
+        totalRounds = clampRounds(data.rounds);
+        updateRoundInput();
+        updateRoundDisplay();
 
-    /* CHUNK */
-
-    if (type === "chunkchanged") {
-        if (data.chunk) {
-            selectedChunk =
-                normalizeChunk(
-                    data.chunk
-                );
-
-            displayChunk();
+        if (!isHost) {
+            showMessage(`🎯 Host selected ${totalRounds} rounds.`, "good");
         }
 
         return;
     }
-
-
-    /* GAME STARTED */
 
     if (type === "gamestarted") {
         if (data.game) {
-            applyServerGameState(
-                data.game
-            );
+            applyServerGameState(data.game);
         }
 
-        return;
-    }
-
-
-    /* WORD ACCEPTED */
-
-    if (type === "wordaccepted") {
-        handleRemoteWordAccepted(
-            data
+        showMessage(
+            `🎮 Game started — ${totalRounds} rounds!`,
+            "good"
         );
 
         return;
     }
 
-
-    /* WORD RESULT */
+    if (type === "wordaccepted") {
+        handleWordAccepted(data);
+        return;
+    }
 
     if (type === "wordresult") {
-        if (
-            data.success === false
-        ) {
-            handleServerWordFailure(
-                data
-            );
+        if (data.success === false) {
+            handleServerWordFailure(data);
         }
 
         return;
     }
-
-
-    /* GAME OVER */
 
     if (type === "gameover") {
         if (data.game) {
-            applyServerGameState(
-                data.game
-            );
+            applyServerGameState(data.game);
         }
 
-        endGame(
-            "💥 BOOM!"
-        );
-
+        endGame("💥 BOOM!");
         return;
     }
-
-
-    /* ERROR */
 
     if (type === "error") {
-        showMessage(
-            data.error ||
-            "Server error.",
-            "bad"
-        );
-
+        showMessage(data.error || "Server error.", "bad");
         return;
     }
 
-
-    /* FALLBACK */
-
     if (data.game) {
-        applyServerGameState(
-            data.game
-        );
-    }
-
-    if (data.players) {
-        currentPlayers =
-            data.players;
-
-        renderPlayers(
-            currentPlayers
-        );
+        applyServerGameState(data.game);
     }
 }
 
@@ -831,99 +434,50 @@ function handleSocketMessage(raw) {
 function applyServerGameState(game) {
     if (!game) return;
 
-    if (
-        typeof game.hostId ===
-        "string"
-    ) {
-        isHost =
-            game.hostId ===
-            playerId;
+    if (typeof game.hostId === "string") {
+        isHost = game.hostId === playerId;
     }
 
-    if (
-        Array.isArray(
-            game.players
-        )
-    ) {
-        currentPlayers =
-            game.players;
-
-        renderPlayers(
-            currentPlayers
-        );
+    if (typeof game.rounds === "number") {
+        totalRounds = clampRounds(game.rounds);
     }
 
-    if (
-        typeof game.rounds ===
-        "number"
-    ) {
-        totalRounds =
-            clampRounds(
-                game.rounds
-            );
+    if (typeof game.currentRound === "number") {
+        currentRound = game.currentRound;
     }
 
-    if (
-        typeof game.currentRound ===
-        "number"
-    ) {
-        currentRound =
-            game.currentRound;
+    if (typeof game.started === "boolean") {
+        gameStarted = game.started;
+    }
+
+    if (typeof game.gameOver === "boolean") {
+        gameOver = game.gameOver;
     }
 
     if (game.chunk) {
-        selectedChunk =
-            normalizeChunk(
-                game.chunk
-            );
-
+        selectedChunk = normalizeChunk(game.chunk);
         displayChunk();
     }
 
-    if (
-        typeof game.timeLeft ===
-        "number"
-    ) {
-        timeLeft =
-            Math.max(
-                0,
-                Math.min(
-                    TURN_TIME,
-                    game.timeLeft
-                )
-            );
-
-        updateTimer();
+    if (typeof game.timeLeft === "number") {
+        timeLeft = Math.max(0, Math.min(TURN_TIME, game.timeLeft));
     }
 
-    if (
-        typeof game.started ===
-        "boolean"
-    ) {
-        gameStarted =
-            game.started;
+    if (Array.isArray(game.players)) {
+        currentPlayers = game.players;
+        renderPlayers(currentPlayers);
     }
 
-    if (
-        typeof game.gameOver ===
-        "boolean"
-    ) {
-        gameOver =
-            game.gameOver;
-    }
-
+    updateRoundInput();
     updateRoundDisplay();
+    updateTimer();
     updateHostUI();
 
     if (gameStarted && !gameOver) {
-        recordButton.disabled =
-            false;
-
-        startExistingTimer();
+        recordButton.disabled = false;
+        startTimer();
     } else {
-        recordButton.disabled =
-            true;
-
+        recordButton.disabled = true;
         stopTimer();
     }
 }
@@ -934,199 +488,187 @@ function applyServerGameState(game) {
 ========================================================= */
 
 function showRoom() {
-    if (roomInfo) {
-        roomInfo.classList.remove(
-            "hidden"
-        );
-    }
+    roomInfo?.classList.remove("hidden");
 
     if (roomCodeDisplay) {
-        roomCodeDisplay.textContent =
-            roomCode;
+        roomCodeDisplay.textContent = roomCode;
     }
 }
-
 
 function renderPlayers(players) {
     if (!playersDisplay) return;
 
-    if (
-        !Array.isArray(players) ||
-        players.length === 0
-    ) {
+    if (!players.length) {
         playersDisplay.innerHTML =
-            `<div class="player waiting">
-                Waiting for players...
-            </div>`;
-
+            `<div class="player waiting">Waiting for players...</div>`;
         return;
     }
 
     playersDisplay.innerHTML = "";
 
     players.forEach(player => {
-        const div =
-            document.createElement(
-                "div"
-            );
-
-        div.className =
-            "player";
-
-        const id =
-            player.id ||
-            player.playerId;
+        const div = document.createElement("div");
+        div.className = "player";
 
         const host =
-            id === player.hostId ||
+            player.isHost === true ||
             player.host === true ||
-            player.isHost === true;
+            player.id === player.hostId;
 
         div.textContent =
-            `${host ? "👑 " : "👤 "}${player.name || "Player"}`;
+            `${host ? "👑" : "👤"} ${player.name || "Player"}`;
 
-        playersDisplay.appendChild(
-            div
-        );
+        playersDisplay.appendChild(div);
     });
 }
 
 
 /* =========================================================
-   HOST UI
-========================================================= */
-
-function updateHostUI() {
-    if (!newGameButton) return;
-
-    if (!roomCode) {
-        newGameButton.disabled =
-            false;
-
-        return;
-    }
-
-    newGameButton.disabled =
-        !isHost;
-
-    newGameButton.title =
-        isHost
-            ? "Host controls"
-            : "Only the host can start a new game.";
-}
-
-
-/* =========================================================
-   ROUND SETTINGS UI
+   HOST ROUND GUI
 ========================================================= */
 
 function createRoundControls() {
     if (!isHost) return;
 
-    let existing =
-        document.getElementById(
-            "roundControls"
-        );
+    let panel = document.getElementById("roundControls");
 
-    if (existing) return;
+    if (!panel) {
+        panel = document.createElement("div");
+        panel.id = "roundControls";
 
-    const panel =
-        document.querySelector(
-            ".multiplayer-panel"
-        );
+        panel.style.marginTop = "14px";
+        panel.style.padding = "14px";
+        panel.style.borderRadius = "14px";
+        panel.style.background = "rgba(255,255,255,0.07)";
+        panel.style.border = "1px solid rgba(255,255,255,0.1)";
 
-    if (!panel) return;
+        panel.innerHTML = `
+            <div style="font-weight:800;font-size:18px;margin-bottom:10px;">
+                👑 Host Settings
+            </div>
 
-    const controls =
-        document.createElement(
-            "div"
-        );
+            <label
+                for="roundCountInput"
+                style="display:block;margin-bottom:7px;"
+            >
+                Number of rounds
+            </label>
 
-    controls.id =
-        "roundControls";
+            <div style="display:flex;gap:8px;align-items:center;">
+                <input
+                    id="roundCountInput"
+                    type="number"
+                    min="${MIN_ROUNDS}"
+                    max="${MAX_ROUNDS}"
+                    value="${totalRounds}"
+                    style="
+                        width:110px;
+                        padding:10px;
+                        border-radius:10px;
+                        border:none;
+                        font-size:16px;
+                        font-weight:700;
+                    "
+                >
 
-    controls.style.marginTop =
-        "14px";
+                <span>rounds</span>
+            </div>
 
-    controls.style.padding =
-        "12px";
-
-    controls.style.borderRadius =
-        "12px";
-
-    controls.style.background =
-        "rgba(255,255,255,0.06)";
-
-    controls.innerHTML = `
-        <div style="font-weight:800;margin-bottom:8px;">
-            👑 Host Settings
-        </div>
-
-        <label style="display:block;margin-bottom:6px;">
-            Number of rounds:
-        </label>
-
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-            <input
-                id="roundCountInput"
-                type="number"
-                min="5"
-                max="250"
-                value="${totalRounds}"
+            <div
                 style="
-                    width:100px;
-                    padding:9px;
-                    border-radius:9px;
-                    border:none;
-                    outline:none;
+                    margin-top:7px;
+                    font-size:12px;
+                    opacity:.7;
                 "
             >
+                Minimum ${MIN_ROUNDS} • Maximum ${MAX_ROUNDS}
+            </div>
 
-            <span>
-                rounds
-            </span>
-        </div>
+            <button
+                id="applyRoundsButton"
+                style="
+                    margin-top:10px;
+                    width:100%;
+                    padding:11px;
+                    border:none;
+                    border-radius:10px;
+                    cursor:pointer;
+                    font-weight:800;
+                "
+            >
+                🎯 Set Rounds
+            </button>
+        `;
 
-        <small style="display:block;margin-top:6px;opacity:.7;">
-            Minimum 5 • Maximum 250
-        </small>
-    `;
+        document
+            .querySelector(".multiplayer-panel")
+            ?.appendChild(panel);
 
-    panel.appendChild(
-        controls
+        document
+            .getElementById("applyRoundsButton")
+            ?.addEventListener("click", setRounds);
+
+        document
+            .getElementById("roundCountInput")
+            ?.addEventListener("keydown", event => {
+                if (event.key === "Enter") {
+                    setRounds();
+                }
+            });
+    }
+
+    updateRoundInput();
+}
+
+function updateRoundInput() {
+    const input = document.getElementById("roundCountInput");
+
+    if (input) {
+        input.value = totalRounds;
+        input.disabled = gameStarted;
+    }
+
+    const button = document.getElementById("applyRoundsButton");
+
+    if (button) {
+        button.disabled = gameStarted;
+        button.textContent =
+            gameStarted
+                ? "🔒 Game Running"
+                : "🎯 Set Rounds";
+    }
+}
+
+function setRounds() {
+    if (!isHost || gameStarted) return;
+
+    const input = document.getElementById("roundCountInput");
+
+    if (!input) return;
+
+    let rounds = Number(input.value);
+
+    if (!Number.isFinite(rounds)) {
+        rounds = MIN_ROUNDS;
+    }
+
+    rounds = clampRounds(rounds);
+
+    input.value = rounds;
+    totalRounds = rounds;
+
+    sendSocketMessage({
+        type: "setRounds",
+        rounds
+    });
+
+    updateRoundDisplay();
+
+    showMessage(
+        `🎯 Rounds set to ${rounds}.`,
+        "good"
     );
 }
-
-
-function getRoundCount() {
-    const input =
-        document.getElementById(
-            "roundCountInput"
-        );
-
-    if (!input) {
-        return totalRounds;
-    }
-
-    let value =
-        Number(input.value);
-
-    if (!Number.isFinite(value)) {
-        value = 5;
-    }
-
-    value =
-        Math.round(value);
-
-    value =
-        clampRounds(value);
-
-    input.value =
-        value;
-
-    return value;
-}
-
 
 function clampRounds(value) {
     return Math.max(
@@ -1140,57 +682,24 @@ function clampRounds(value) {
 
 
 /* =========================================================
-   CHUNKS
+   HOST UI
 ========================================================= */
 
-function chooseChunk() {
-    let chunk;
-
-    do {
-        chunk =
-            CHUNKS[
-                Math.floor(
-                    Math.random() *
-                    CHUNKS.length
-                )
-            ];
-    } while (
-        CHUNKS.length > 1 &&
-        chunk === selectedChunk
-    );
-
-    selectedChunk =
-        chunk;
-
-    displayChunk();
-}
-
-
-function normalizeChunk(chunk) {
-    if (
-        typeof chunk !==
-        "string"
-    ) {
-        return "";
+function updateHostUI() {
+    if (isHost) {
+        createRoundControls();
     }
 
-    return chunk
-        .toLowerCase()
-        .replace(
-            /[^a-z]/g,
-            ""
-        )
-        .slice(0, 3);
-}
+    if (newGameButton) {
+        newGameButton.disabled = roomCode ? !isHost : false;
 
+        newGameButton.textContent =
+            isHost
+                ? "🎮 Start Game"
+                : "🔒 Host Only";
+    }
 
-function displayChunk() {
-    if (!chunkDisplay) return;
-
-    chunkDisplay.textContent =
-        selectedChunk
-            ? selectedChunk.toUpperCase()
-            : "--";
+    updateRoundInput();
 }
 
 
@@ -1204,26 +713,104 @@ function updateRoundDisplay() {
     if (!roomCode) {
         turnText.textContent =
             "Create or join a room to play.";
-
         return;
     }
 
     if (!gameStarted) {
         turnText.textContent =
             isHost
-                ? "Set the rounds and start the game."
-                : "Waiting for the host to start...";
+                ? `Ready — ${totalRounds} rounds selected.`
+                : `Waiting for the host... (${totalRounds} rounds)`;
         return;
     }
 
     if (gameOver) {
-        turnText.textContent =
-            "Game over!";
+        turnText.textContent = "Game over!";
         return;
     }
 
     turnText.textContent =
         `Round ${currentRound} / ${totalRounds}`;
+}
+
+
+/* =========================================================
+   NEW GAME
+========================================================= */
+
+function newGame() {
+    if (roomCode && !isHost) {
+        showMessage("🔒 Only the host can start the game.", "bad");
+        return;
+    }
+
+    if (roomCode) {
+        const rounds = getRoundCount();
+
+        sendSocketMessage({
+            type: "newGame",
+            rounds
+        });
+
+        return;
+    }
+
+    totalRounds = getRoundCount();
+    currentRound = 1;
+
+    startLocalGame();
+}
+
+function getRoundCount() {
+    const input = document.getElementById("roundCountInput");
+
+    if (!input) {
+        return clampRounds(totalRounds);
+    }
+
+    let value = Number(input.value);
+
+    if (!Number.isFinite(value)) {
+        value = MIN_ROUNDS;
+    }
+
+    value = clampRounds(value);
+    input.value = value;
+
+    totalRounds = value;
+
+    return value;
+}
+
+function startLocalGame() {
+    stopTimer();
+
+    score = 0;
+    streak = 0;
+    usedWords.clear();
+
+    gameStarted = true;
+    gameOver = false;
+
+    currentRound = 1;
+    timeLeft = TURN_TIME;
+
+    chooseChunk();
+
+    transcript.textContent = "—";
+    resultText.textContent = "Say a word!";
+    resultText.className = "result";
+
+    recordButton.disabled = false;
+
+    bomb.classList.remove("explode", "warning");
+
+    updateStats();
+    renderUsedWords();
+    updateRoundDisplay();
+    updateTimer();
+
+    startTimer();
 }
 
 
@@ -1234,334 +821,115 @@ function updateRoundDisplay() {
 function startTimer() {
     stopTimer();
 
-    if (
-        !gameStarted ||
-        gameOver
-    ) {
-        return;
-    }
+    if (!gameStarted || gameOver) return;
 
-    timeLeft =
-        TURN_TIME;
+    timerInterval = setInterval(() => {
+        if (processing || recording) return;
 
-    updateTimer();
+        timeLeft -= 0.1;
 
-    startExistingTimer();
-}
-
-
-function startExistingTimer() {
-    stopTimer();
-
-    if (
-        !gameStarted ||
-        gameOver
-    ) {
-        return;
-    }
-
-    timerInterval =
-        setInterval(() => {
-            if (
-                processing ||
-                recording
-            ) {
-                return;
-            }
-
-            timeLeft -= 0.1;
-
-            if (timeLeft <= 0) {
-                timeLeft = 0;
-
-                updateTimer();
-
-                timeExpired();
-
-                return;
-            }
-
+        if (timeLeft <= 0) {
+            timeLeft = 0;
             updateTimer();
-        }, 100);
+            timeExpired();
+            return;
+        }
+
+        updateTimer();
+    }, 100);
 
     updateTimer();
 }
-
 
 function stopTimer() {
     if (timerInterval) {
-        clearInterval(
-            timerInterval
-        );
+        clearInterval(timerInterval);
     }
 
     timerInterval = null;
 }
 
-
 function updateTimer() {
     if (!timerDisplay) return;
 
-    timerDisplay.textContent =
-        timeLeft.toFixed(1);
+    timerDisplay.textContent = timeLeft.toFixed(1);
 
     const percent =
-        (timeLeft /
-            TURN_TIME) *
-        100;
+        Math.max(0, (timeLeft / TURN_TIME) * 100);
 
     if (timerBar) {
-        timerBar.style.width =
-            `${Math.max(
-                0,
-                percent
-            )}%`;
+        timerBar.style.width = `${percent}%`;
     }
 
-    if (
-        timeLeft <= 5
-    ) {
-        bomb?.classList.add(
-            "warning"
-        );
-
-        timerBar?.classList.add(
-            "warning"
-        );
+    if (timeLeft <= 5) {
+        bomb?.classList.add("warning");
+        timerBar?.classList.add("warning");
     } else {
-        bomb?.classList.remove(
-            "warning"
-        );
-
-        timerBar?.classList.remove(
-            "warning"
-        );
+        bomb?.classList.remove("warning");
+        timerBar?.classList.remove("warning");
     }
 }
-
-
-/* =========================================================
-   TIME EXPIRED
-========================================================= */
 
 function timeExpired() {
-    if (
-        gameOver ||
-        !gameStarted
-    ) {
-        return;
-    }
+    if (!gameStarted || gameOver) return;
 
     stopTimer();
 
-    endGame(
-        "💥 BOOM! Time ran out!"
-    );
-
-    sendSocketMessage({
-        type: "gameOver",
-        playerId,
-        name: playerName,
-        reason: "timeout"
-    });
+    if (roomCode) {
+        if (isHost) {
+            sendSocketMessage({
+                type: "gameOver",
+                reason: "timeout"
+            });
+        }
+    } else {
+        endGame("💥 BOOM! Time ran out!");
+    }
 }
 
 
 /* =========================================================
-   NEW GAME
+   CHUNK
 ========================================================= */
 
-function newGame() {
-    if (
-        roomCode &&
-        !isHost
-    ) {
-        showMessage(
-            "🔒 Only the host can start a new game.",
-            "bad"
-        );
+function chooseChunk() {
+    let chunk;
 
-        return;
-    }
-
-    const rounds =
-        getRoundCount();
-
-    totalRounds =
-        rounds;
-
-    stopTimer();
-
-    cleanupStream();
-
-    clearTimeout(
-        roundTransitionTimer
+    do {
+        chunk =
+            CHUNKS[
+                Math.floor(Math.random() * CHUNKS.length)
+            ];
+    } while (
+        CHUNKS.length > 1 &&
+        chunk === selectedChunk
     );
 
-    score = 0;
-    streak = 0;
+    selectedChunk = chunk;
+    displayChunk();
+}
 
-    currentRound = 1;
+function normalizeChunk(chunk) {
+    if (typeof chunk !== "string") return "";
 
-    timeLeft =
-        TURN_TIME;
+    return chunk
+        .toLowerCase()
+        .replace(/[^a-z]/g, "")
+        .slice(0, 3);
+}
 
-    gameStarted = true;
-    gameOver = false;
+function displayChunk() {
+    if (!chunkDisplay) return;
 
-    processing = false;
-    recording = false;
-
-    usedWords.clear();
-
-    lastSubmittedWord = "";
-
-    audioBlob = null;
-    audioChunks = [];
-
-    downloadButton.disabled =
-        true;
-
-    recordButton.disabled =
-        false;
-
-    recordButton.classList.remove(
-        "speaking"
-    );
-
-    recordButton.textContent =
-        "🎤 SPEAK";
-
-    recordingStatus.textContent =
-        "Click SPEAK and say ONE word.";
-
-    transcript.textContent =
-        "—";
-
-    resultText.textContent =
-        "Say a word!";
-
-    resultText.className =
-        "result";
-
-    hideMessage();
-
-    bomb.classList.remove(
-        "explode",
-        "warning"
-    );
-
-    chooseChunk();
-
-    updateStats();
-    renderUsedWords();
-    updateRoundDisplay();
-    updateTimer();
-
-    if (roomCode && isHost) {
-        sendSocketMessage({
-            type: "newGame",
-            rounds: totalRounds,
-            chunk: selectedChunk,
-            currentRound: 1,
-            timeLeft: TURN_TIME
-        });
-    }
-
-    startTimer();
+    chunkDisplay.textContent =
+        selectedChunk
+            ? selectedChunk.toUpperCase()
+            : "--";
 }
 
 
 /* =========================================================
-   ADVANCE ROUND
-========================================================= */
-
-function advanceRound() {
-    if (gameOver) return;
-
-    if (
-        currentRound >=
-        totalRounds
-    ) {
-        finishGame();
-
-        return;
-    }
-
-    currentRound++;
-
-    chooseChunk();
-
-    transcript.textContent =
-        "—";
-
-    resultText.textContent =
-        "Say a word!";
-
-    resultText.className =
-        "result";
-
-    timeLeft =
-        TURN_TIME;
-
-    updateRoundDisplay();
-    updateTimer();
-
-    if (isHost) {
-        sendSocketMessage({
-            type: "round",
-            currentRound,
-            totalRounds,
-            chunk: selectedChunk,
-            timeLeft: TURN_TIME
-        });
-    }
-
-    startTimer();
-}
-
-
-/* =========================================================
-   FINISH GAME
-========================================================= */
-
-function finishGame() {
-    stopTimer();
-
-    gameStarted = false;
-    gameOver = true;
-
-    recordButton.disabled =
-        true;
-
-    turnText.textContent =
-        "🏆 Game complete!";
-
-    recordingStatus.textContent =
-        "All rounds completed.";
-
-    showMessage(
-        `🏆 ${totalRounds} rounds complete!`,
-        "good"
-    );
-
-    resultText.textContent =
-        "🏆 GAME COMPLETE";
-
-    resultText.className =
-        "result good";
-
-    if (isHost) {
-        sendSocketMessage({
-            type: "gameOver",
-            reason: "roundsComplete"
-        });
-    }
-}
-
-
-/* =========================================================
-   AUTOMATIC RECORDING
+   RECORDING
 ========================================================= */
 
 async function startRecording() {
@@ -1574,8 +942,6 @@ async function startRecording() {
         return;
     }
 
-    hideMessage();
-
     try {
         mediaStream =
             await navigator.mediaDevices.getUserMedia({
@@ -1584,75 +950,46 @@ async function startRecording() {
 
         audioChunks = [];
 
-        let mimeType =
-            "audio/webm";
-
-        if (
-            MediaRecorder.isTypeSupported(
-                "audio/webm;codecs=opus"
-            )
-        ) {
-            mimeType =
-                "audio/webm;codecs=opus";
-        }
+        const mimeType =
+            MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+                ? "audio/webm;codecs=opus"
+                : "audio/webm";
 
         mediaRecorder =
-            new MediaRecorder(
-                mediaStream,
-                {
-                    mimeType
-                }
-            );
+            new MediaRecorder(mediaStream, {
+                mimeType
+            });
 
-        mediaRecorder.ondataavailable =
-            event => {
-                if (
-                    event.data &&
-                    event.data.size > 0
-                ) {
-                    audioChunks.push(
-                        event.data
-                    );
-                }
-            };
+        mediaRecorder.ondataavailable = event => {
+            if (event.data?.size > 0) {
+                audioChunks.push(event.data);
+            }
+        };
 
-        mediaRecorder.onstop =
-            async () => {
-                audioBlob =
-                    new Blob(
-                        audioChunks,
-                        {
-                            type: mimeType
-                        }
-                    );
+        mediaRecorder.onstop = async () => {
+            audioBlob =
+                new Blob(audioChunks, {
+                    type: mimeType
+                });
 
-                downloadButton.disabled =
-                    false;
+            downloadButton.disabled = false;
 
-                await transcribeWord();
+            await transcribeWord();
 
-                cleanupStream();
-            };
+            cleanupStream();
+        };
 
         mediaRecorder.start();
 
         recording = true;
 
-        recordButton.classList.add(
-            "speaking"
-        );
-
-        recordButton.textContent =
-            "🔴 RECORDING...";
-
+        recordButton.classList.add("speaking");
+        recordButton.textContent = "🔴 RECORDING...";
         recordingStatus.textContent =
             "🎤 Listening... say ONE word!";
 
     } catch (error) {
-        console.error(
-            "Microphone error:",
-            error
-        );
+        console.error(error);
 
         showMessage(
             "Microphone access failed.",
@@ -1663,30 +1000,18 @@ async function startRecording() {
     }
 }
 
-
-/* =========================================================
-   STOP RECORDING
-========================================================= */
-
 function stopRecording() {
     if (!recording) return;
 
     recording = false;
 
-    recordButton.classList.remove(
-        "speaking"
-    );
-
-    recordButton.textContent =
-        "🧠 PROCESSING...";
-
-    recordingStatus.textContent =
-        "🧠 Transcribing...";
+    recordButton.classList.remove("speaking");
+    recordButton.textContent = "🧠 PROCESSING...";
+    recordingStatus.textContent = "🧠 Transcribing...";
 
     if (
         mediaRecorder &&
-        mediaRecorder.state ===
-            "recording"
+        mediaRecorder.state === "recording"
     ) {
         mediaRecorder.stop();
     }
@@ -1698,21 +1023,15 @@ function stopRecording() {
 ========================================================= */
 
 if (recordButton) {
-    recordButton.disabled =
-        true;
+    recordButton.disabled = true;
 
-    recordButton.addEventListener(
-        "click",
-        () => {
-            if (
-                recording
-            ) {
-                stopRecording();
-            } else {
-                startRecording();
-            }
+    recordButton.addEventListener("click", () => {
+        if (recording) {
+            stopRecording();
+        } else {
+            startRecording();
         }
-    );
+    });
 }
 
 
@@ -1722,23 +1041,15 @@ if (recordButton) {
 
 async function transcribeWord() {
     if (!audioBlob) {
-        showMessage(
-            "No recording was created.",
-            "bad"
-        );
-
+        showMessage("No recording was created.", "bad");
         return;
     }
 
     processing = true;
-
-    recordButton.disabled =
-        true;
-
+    recordButton.disabled = true;
     stopTimer();
 
-    const formData =
-        new FormData();
+    const formData = new FormData();
 
     formData.append(
         "file",
@@ -1748,26 +1059,19 @@ async function transcribeWord() {
 
     try {
         const response =
-            await fetch(
-                WORKER_URL,
-                {
-                    method: "POST",
-                    body: formData
-                }
-            );
+            await fetch(WORKER_URL, {
+                method: "POST",
+                body: formData
+            });
 
-        const raw =
-            await response.text();
+        const raw = await response.text();
 
         let result;
 
         try {
-            result =
-                JSON.parse(raw);
+            result = JSON.parse(raw);
         } catch {
-            throw new Error(
-                "Worker returned invalid JSON."
-            );
+            throw new Error("Worker returned invalid JSON.");
         }
 
         if (!response.ok) {
@@ -1785,9 +1089,7 @@ async function transcribeWord() {
         }
 
         const word =
-            normalizeWord(
-                result.text
-            );
+            normalizeWord(result.text);
 
         transcript.textContent =
             word || "???";
@@ -1801,174 +1103,71 @@ async function transcribeWord() {
             return;
         }
 
-        lastSubmittedWord =
-            word;
+        lastSubmittedWord = word;
 
         submitWord(word);
 
     } catch (error) {
-        console.error(
-            "Transcription error:",
-            error
-        );
+        console.error(error);
 
         showMessage(
-            "Transcription error: " +
-            error.message,
+            "Transcription error: " + error.message,
             "bad"
         );
 
-        recordingStatus.textContent =
-            "Try again.";
+        recordingStatus.textContent = "Try again.";
 
     } finally {
         processing = false;
 
-        if (
-            gameStarted &&
-            !gameOver
-        ) {
-            recordButton.disabled =
-                false;
-
-            startExistingTimer();
+        if (gameStarted && !gameOver) {
+            recordButton.disabled = false;
+            startTimer();
         }
     }
 }
 
 
 /* =========================================================
-   NORMALIZE WORD
+   WORD
 ========================================================= */
 
 function normalizeWord(text) {
-    if (
-        typeof text !==
-        "string"
-    ) {
-        return "";
-    }
+    if (typeof text !== "string") return "";
 
-    const cleaned =
-        text
-            .toLowerCase()
-            .replace(
-                /[^a-z\s'-]/g,
-                " "
-            )
-            .replace(
-                /\s+/g,
-                " "
-            )
-            .trim();
-
-    if (!cleaned) {
-        return "";
-    }
-
-    const words =
-        cleaned
-            .split(" ")
-            .map(word =>
-                word
-                    .replace(
-                        /^'+|'+$/g,
-                        ""
-                    )
-                    .trim()
-            )
-            .filter(Boolean);
-
-    if (
-        words.length === 0
-    ) {
-        return "";
-    }
-
-    const matching =
-        words.filter(
-            word =>
-                word.includes(
-                    selectedChunk
-                )
-        );
-
-    if (
-        matching.length > 0
-    ) {
-        matching.sort(
-            (a, b) =>
-                b.length -
-                a.length
-        );
-
-        return matching[0];
-    }
-
-    return words[0];
+    return text
+        .toLowerCase()
+        .replace(/[^a-z'-]/g, "")
+        .replace(/^'+|'+$/g, "")
+        .trim()
+        .slice(0, 50);
 }
 
-
-/* =========================================================
-   SUBMIT WORD
-========================================================= */
-
 function submitWord(word) {
-    const lower =
-        normalizeWord(word);
+    if (!word) return;
 
-    if (!lower) return;
-
-    if (
-        usedWords.has(lower)
-    ) {
-        showWordFailure(
-            "duplicate",
-            lower
-        );
-
+    if (usedWords.has(word)) {
+        showWordFailure("duplicate", word);
         return;
     }
 
-    if (
-        !lower.includes(
-            selectedChunk
-        )
-    ) {
-        showWordFailure(
-            "missingChunk",
-            lower
-        );
-
+    if (!word.includes(selectedChunk)) {
+        showWordFailure("missingChunk", word);
         return;
     }
-
-    /*
-       Multiplayer server gets the final
-       authority over the word.
-    */
 
     if (roomCode) {
+        stopTimer();
+
         sendSocketMessage({
             type: "word",
-            word: lower,
-            playerId,
-            name: playerName
+            word
         });
-
-        /*
-           Don't advance the round locally yet.
-           The server confirms the word first.
-        */
-
-        stopTimer();
 
         return;
     }
 
-    acceptLocalWord(
-        lower
-    );
+    acceptLocalWord(word);
 }
 
 
@@ -1977,44 +1176,13 @@ function submitWord(word) {
 ========================================================= */
 
 function acceptLocalWord(word) {
-    if (
-        usedWords.has(word)
-    ) {
-        showWordFailure(
-            "duplicate",
-            word
-        );
-
-        return;
-    }
-
-    if (
-        !word.includes(
-            selectedChunk
-        )
-    ) {
-        showWordFailure(
-            "missingChunk",
-            word
-        );
-
-        return;
-    }
-
-    usedWords.add(
-        word
-    );
+    usedWords.add(word);
 
     const points =
         10 +
-        Math.min(
-            streak * 2,
-            20
-        );
+        Math.min(streak * 2, 20);
 
-    score +=
-        points;
-
+    score += points;
     streak++;
 
     updateStats();
@@ -2028,184 +1196,93 @@ function acceptLocalWord(word) {
     resultText.textContent =
         `✅ Contains "${selectedChunk.toUpperCase()}"`;
 
-    resultText.className =
-        "result good";
+    resultText.className = "result good";
 
-    recordingStatus.textContent =
-        "Nice! Next round...";
+    if (currentRound >= totalRounds) {
+        finishGame();
+        return;
+    }
 
-    stopTimer();
+    currentRound++;
 
-    roundTransitionTimer =
-        setTimeout(
-            advanceRound,
-            700
-        );
+    chooseChunk();
+
+    timeLeft = TURN_TIME;
+
+    updateRoundDisplay();
+    updateTimer();
+
+    startTimer();
 }
 
 
 /* =========================================================
-   REMOTE WORD ACCEPTED
+   WORD ACCEPTED FROM SERVER
 ========================================================= */
 
-function handleRemoteWordAccepted(
-    data
-) {
-    const word =
-        normalizeWord(
-            data.word
-        );
+function handleWordAccepted(data) {
+    const word = normalizeWord(data.word);
 
     if (!word) return;
 
-    usedWords.add(
-        word
-    );
+    usedWords.add(word);
 
-    if (
-        data.playerId ===
-        playerId
-    ) {
-        if (
-            typeof data.points ===
-            "number"
-        ) {
-            score +=
-                data.points;
+    if (data.playerId === playerId) {
+        if (typeof data.points === "number") {
+            score += data.points;
         }
 
         streak++;
 
-        updateStats();
-
-        renderUsedWords();
-
-        showMessage(
-            `✅ ${word.toUpperCase()} works! +${data.points || 0}`,
-            "good"
-        );
+        transcript.textContent = word;
 
         resultText.textContent =
             `✅ Contains "${selectedChunk.toUpperCase()}"`;
 
-        resultText.className =
-            "result good";
+        resultText.className = "result good";
 
         recordingStatus.textContent =
             "Nice! Next round...";
 
-        stopTimer();
-
-        if (
-            typeof data.currentRound ===
-            "number"
-        ) {
-            currentRound =
-                data.currentRound;
-        }
-
-        if (
-            typeof data.totalRounds ===
-            "number"
-        ) {
-            totalRounds =
-                clampRounds(
-                    data.totalRounds
-                );
-        }
-
-        if (data.nextChunk) {
-            selectedChunk =
-                normalizeChunk(
-                    data.nextChunk
-                );
-
-            displayChunk();
-        }
-
-        if (
-            currentRound >=
-            totalRounds
-        ) {
-            finishGame();
-        } else {
-            roundTransitionTimer =
-                setTimeout(
-                    () => {
-                        if (
-                            data.nextChunk
-                        ) {
-                            timeLeft =
-                                TURN_TIME;
-
-                            updateTimer();
-
-                            updateRoundDisplay();
-
-                            startTimer();
-                        }
-                    },
-                    700
-                );
-        }
-
-        return;
+        updateStats();
+        renderUsedWords();
+    } else {
+        showMessage(
+            `👥 ${data.name || "Player"} used "${word.toUpperCase()}"`,
+            "good"
+        );
     }
 
-    /*
-       Another player successfully used
-       a word.
-    */
+    if (typeof data.currentRound === "number") {
+        currentRound = data.currentRound;
+    }
 
-    showMessage(
-        `👥 ${data.name || "Player"} used "${word.toUpperCase()}"`,
-        "good"
-    );
+    if (typeof data.totalRounds === "number") {
+        totalRounds = clampRounds(data.totalRounds);
+    }
 
-    renderUsedWords();
-
-    if (
-        data.nextChunk
-    ) {
-        selectedChunk =
-            normalizeChunk(
-                data.nextChunk
-            );
-
+    if (data.nextChunk) {
+        selectedChunk = normalizeChunk(data.nextChunk);
         displayChunk();
     }
 
-    if (
-        typeof data.currentRound ===
-        "number"
-    ) {
-        currentRound =
-            data.currentRound;
+    updateRoundDisplay();
+
+    if (currentRound >= totalRounds) {
+        finishGame();
+        return;
     }
 
-    updateRoundDisplay();
-}
+    timeLeft =
+        typeof data.timeLeft === "number"
+            ? data.timeLeft
+            : TURN_TIME;
 
+    updateTimer();
 
-/* =========================================================
-   SERVER WORD FAILURE
-========================================================= */
-
-function handleServerWordFailure(
-    data
-) {
-    const word =
-        normalizeWord(
-            data.word ||
-            lastSubmittedWord
-        );
-
-    showWordFailure(
-        data.reason,
-        word
-    );
-
-    startExistingTimer();
+    if (gameStarted && !gameOver) {
+        startTimer();
+    }
 }
 
 
@@ -2213,18 +1290,23 @@ function handleServerWordFailure(
    WORD FAILURE
 ========================================================= */
 
-function showWordFailure(
-    reason,
-    word
-) {
+function handleServerWordFailure(data) {
+    showWordFailure(
+        data.reason,
+        data.word || lastSubmittedWord
+    );
+
+    startTimer();
+}
+
+function showWordFailure(reason, word) {
     if (reason === "duplicate") {
         showMessage(
             `"${word.toUpperCase()}" was already used!`,
             "bad"
         );
 
-        resultText.textContent =
-            "🚫 Already used";
+        resultText.textContent = "🚫 Already used";
     } else {
         showMessage(
             `"${word.toUpperCase()}" does not contain "${selectedChunk.toUpperCase()}".`,
@@ -2235,11 +1317,9 @@ function showWordFailure(
             `❌ Missing "${selectedChunk.toUpperCase()}"`;
     }
 
-    resultText.className =
-        "result bad";
+    resultText.className = "result bad";
 
     streak = 0;
-
     updateStats();
 
     recordingStatus.textContent =
@@ -2248,48 +1328,55 @@ function showWordFailure(
 
 
 /* =========================================================
-   REMOTE GAME OVER
+   GAME OVER
 ========================================================= */
 
-function endGame(
-    text = "💥 BOOM!"
-) {
+function finishGame() {
     stopTimer();
 
     gameStarted = false;
     gameOver = true;
 
-    recordButton.disabled =
-        true;
+    recordButton.disabled = true;
 
-    bomb?.classList.remove(
-        "warning"
-    );
-
-    bomb?.classList.add(
-        "explode"
-    );
+    updateRoundDisplay();
+    updateRoundInput();
 
     resultText.textContent =
-        text;
+        "🏆 GAME COMPLETE";
 
-    resultText.className =
-        "result bad";
+    resultText.className = "result good";
+
+    recordingStatus.textContent =
+        "All rounds completed.";
+
+    showMessage(
+        `🏆 ${totalRounds} rounds complete!`,
+        "good";
+    );
+}
+
+function endGame(text = "💥 BOOM!") {
+    stopTimer();
+
+    gameStarted = false;
+    gameOver = true;
+
+    recordButton.disabled = true;
+
+    bomb?.classList.add("explode");
+
+    resultText.textContent = text;
+    resultText.className = "result bad";
 
     recordingStatus.textContent =
         "Game over.";
 
-    turnText.textContent =
-        "Game over!";
-
-    streak = 0;
-
-    updateStats();
+    updateRoundDisplay();
+    updateRoundInput();
 
     setTimeout(() => {
-        bomb?.classList.remove(
-            "explode"
-        );
+        bomb?.classList.remove("explode");
     }, 600);
 }
 
@@ -2299,20 +1386,9 @@ function endGame(
 ========================================================= */
 
 function updateStats() {
-    if (scoreDisplay) {
-        scoreDisplay.textContent =
-            score;
-    }
-
-    if (streakDisplay) {
-        streakDisplay.textContent =
-            streak;
-    }
-
-    if (wordsUsedDisplay) {
-        wordsUsedDisplay.textContent =
-            usedWords.size;
-    }
+    scoreDisplay.textContent = score;
+    streakDisplay.textContent = streak;
+    wordsUsedDisplay.textContent = usedWords.size;
 }
 
 
@@ -2323,269 +1399,145 @@ function updateStats() {
 function renderUsedWords() {
     if (!usedWordsDisplay) return;
 
-    if (
-        usedWords.size === 0
-    ) {
-        usedWordsDisplay.textContent =
-            "No words yet.";
-
+    if (usedWords.size === 0) {
+        usedWordsDisplay.textContent = "No words yet.";
         return;
     }
 
-    usedWordsDisplay.innerHTML =
-        "";
+    usedWordsDisplay.innerHTML = "";
 
-    [
-        ...usedWords
-    ]
+    [...usedWords]
         .reverse()
         .forEach(word => {
             const element =
-                document.createElement(
-                    "span"
-                );
+                document.createElement("span");
 
-            element.className =
-                "used-word";
+            element.className = "used-word";
+            element.textContent = word;
 
-            element.textContent =
-                word;
-
-            usedWordsDisplay.appendChild(
-                element
-            );
+            usedWordsDisplay.appendChild(element);
         });
 }
 
 
 /* =========================================================
-   COPY ROOM
+   COPY
 ========================================================= */
 
-if (copyRoomButton) {
-    copyRoomButton.addEventListener(
-        "click",
-        async () => {
-            if (!roomCode) return;
+copyRoomButton?.addEventListener("click", async () => {
+    if (!roomCode) return;
 
-            try {
-                await navigator.clipboard.writeText(
-                    roomCode
-                );
+    try {
+        await navigator.clipboard.writeText(roomCode);
 
-                copyRoomButton.textContent =
-                    "✅ Copied!";
+        copyRoomButton.textContent = "✅ Copied!";
 
-                setTimeout(() => {
-                    copyRoomButton.textContent =
-                        "📋 Copy";
-                }, 1200);
+        setTimeout(() => {
+            copyRoomButton.textContent = "📋 Copy";
+        }, 1200);
+    } catch {
+        showMessage(
+            "Couldn't copy room code.",
+            "bad"
+        );
+    }
+});
 
-            } catch {
-                showMessage(
-                    "Couldn't copy room code.",
-                    "bad"
-                );
-            }
-        }
-    );
-}
+copyButton?.addEventListener("click", async () => {
+    const word = transcript.textContent.trim();
 
+    if (!word || word === "—" || word === "???") return;
 
-/* =========================================================
-   COPY WORD
-========================================================= */
+    try {
+        await navigator.clipboard.writeText(word);
 
-if (copyButton) {
-    copyButton.addEventListener(
-        "click",
-        async () => {
-            const word =
-                transcript.textContent
-                    .trim();
+        copyButton.textContent = "✅ Copied!";
 
-            if (
-                !word ||
-                word === "—" ||
-                word === "???"
-            ) {
-                return;
-            }
+        setTimeout(() => {
+            copyButton.textContent = "📋 Copy Word";
+        }, 1200);
+    } catch {
+        showMessage(
+            "Couldn't copy the word.",
+            "bad"
+        );
+    }
+});
 
-            try {
-                await navigator.clipboard.writeText(
-                    word
-                );
+downloadButton?.addEventListener("click", () => {
+    if (!audioBlob) return;
 
-                copyButton.textContent =
-                    "✅ Copied!";
+    const url = URL.createObjectURL(audioBlob);
+    const link = document.createElement("a");
 
-                setTimeout(() => {
-                    copyButton.textContent =
-                        "📋 Copy Word";
-                }, 1200);
+    link.href = url;
+    link.download = "word-bomb-word.webm";
 
-            } catch {
-                showMessage(
-                    "Couldn't copy the word.",
-                    "bad"
-                );
-            }
-        }
-    );
-}
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
 
-
-/* =========================================================
-   DOWNLOAD AUDIO
-========================================================= */
-
-if (downloadButton) {
-    downloadButton.addEventListener(
-        "click",
-        () => {
-            if (!audioBlob) return;
-
-            const url =
-                URL.createObjectURL(
-                    audioBlob
-                );
-
-            const link =
-                document.createElement(
-                    "a"
-                );
-
-            link.href =
-                url;
-
-            link.download =
-                "word-bomb-word.webm";
-
-            document.body.appendChild(
-                link
-            );
-
-            link.click();
-
-            link.remove();
-
-            URL.revokeObjectURL(
-                url
-            );
-        }
-    );
-}
+    URL.revokeObjectURL(url);
+});
 
 
 /* =========================================================
    BUTTONS
 ========================================================= */
 
-if (createRoomButton) {
-    createRoomButton.addEventListener(
-        "click",
-        createRoom
-    );
-}
+createRoomButton?.addEventListener("click", createRoom);
+joinRoomButton?.addEventListener("click", joinRoom);
+newGameButton?.addEventListener("click", newGame);
 
-
-if (joinRoomButton) {
-    joinRoomButton.addEventListener(
-        "click",
-        joinRoom
-    );
-}
-
-
-if (roomInput) {
-    roomInput.addEventListener(
-        "keydown",
-        event => {
-            if (
-                event.key ===
-                "Enter"
-            ) {
-                joinRoom();
-            }
-        }
-    );
-}
-
-
-if (newGameButton) {
-    newGameButton.addEventListener(
-        "click",
-        newGame
-    );
-}
+roomInput?.addEventListener("keydown", event => {
+    if (event.key === "Enter") {
+        joinRoom();
+    }
+});
 
 
 /* =========================================================
    MESSAGES
 ========================================================= */
 
-function showMessage(
-    text,
-    type = ""
-) {
+function showMessage(text, type = "") {
     if (!message) return;
 
-    message.textContent =
-        text;
-
-    message.className =
-        `message ${type}`;
+    message.textContent = text;
+    message.className = `message ${type}`;
 }
-
 
 function hideMessage() {
     if (!message) return;
 
-    message.textContent =
-        "";
-
-    message.className =
-        "message";
+    message.textContent = "";
+    message.className = "message";
 }
 
 
 /* =========================================================
-   MICROPHONE CLEANUP
+   CLEANUP
 ========================================================= */
 
 function cleanupStream() {
     if (mediaStream) {
-        mediaStream
-            .getTracks()
-            .forEach(track => {
-                track.stop();
-            });
+        mediaStream.getTracks().forEach(track => track.stop());
     }
 
     mediaStream = null;
 }
 
+window.addEventListener("beforeunload", () => {
+    intentionalDisconnect = true;
 
-/* =========================================================
-   PAGE CLEANUP
-========================================================= */
+    cleanupStream();
 
-window.addEventListener(
-    "beforeunload",
-    () => {
-        intentionalDisconnect =
-            true;
-
-        cleanupStream();
-
-        if (socket) {
-            try {
-                socket.close();
-            } catch {}
-        }
+    if (socket) {
+        try {
+            socket.close();
+        } catch {}
     }
-);
+});
 
 
 /* =========================================================
@@ -2593,13 +1545,10 @@ window.addEventListener(
 ========================================================= */
 
 playerId =
-    localStorage.getItem(
-        "voiceBombPlayerId"
-    );
+    localStorage.getItem("voiceBombPlayerId");
 
 if (!playerId) {
-    playerId =
-        generatePlayerId();
+    playerId = generatePlayerId();
 
     localStorage.setItem(
         "voiceBombPlayerId",
@@ -2607,11 +1556,9 @@ if (!playerId) {
     );
 }
 
-playerName =
-    getPlayerName();
+playerName = getPlayerName();
 
-totalRounds =
-    MIN_ROUNDS;
+totalRounds = MIN_ROUNDS;
 
 updateStats();
 updateTimer();
@@ -2619,6 +1566,4 @@ displayChunk();
 updateRoundDisplay();
 updateHostUI();
 
-console.log(
-    "[Voice Bomb] script.js loaded."
-);
+console.log("[Voice Bomb] script.js loaded.");
