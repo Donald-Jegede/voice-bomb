@@ -184,16 +184,6 @@ async function handleRoom(request, env) {
 
   let roomId = "";
 
-  /*
-    Accept:
-
-    /room?room=ABCD
-
-    OR
-
-    /room/ABCD
-  */
-
   if (url.pathname.startsWith("/room/")) {
     roomId =
       url.pathname
@@ -361,6 +351,11 @@ export class GameRoom {
     /*
       Don't duplicate a player if the client reconnects
       using the same player ID.
+
+      IMPORTANT:
+      If an old socket closes after a new socket has
+      replaced it, the old socket must NOT remove the
+      player from the room.
     */
 
     const player = {
@@ -372,6 +367,18 @@ export class GameRoom {
         ),
       joinedAt: Date.now()
     };
+
+    const oldSocket =
+      this.sessions.get(playerId);
+
+    if (oldSocket && oldSocket !== server) {
+      try {
+        oldSocket.close(
+          1000,
+          "Reconnected"
+        );
+      } catch {}
+    }
 
     this.players.set(
       playerId,
@@ -386,6 +393,8 @@ export class GameRoom {
     if (!this.game.hostId) {
       this.game.hostId =
         playerId;
+
+      await this.saveGame();
     }
 
     console.log(
@@ -435,6 +444,15 @@ export class GameRoom {
       }
     );
 
+    /*
+      IMPORTANT RECONNECT FIX
+
+      Only remove the player if THIS socket is still
+      the current socket for that player.
+
+      This prevents an old connection's close event
+      from deleting a newly reconnected player.
+    */
     server.addEventListener(
       "close",
       event => {
@@ -445,12 +463,25 @@ export class GameRoom {
           event.reason
         );
 
-        this.removePlayer(
-          playerId
-        ).catch(console.error);
+        if (
+          this.sessions.get(playerId) ===
+          server
+        ) {
+          this.removePlayer(
+            playerId
+          ).catch(console.error);
+        } else {
+          console.log(
+            "Ignoring stale socket close:",
+            playerId
+          );
+        }
       }
     );
 
+    /*
+      Same protection for socket errors.
+    */
     server.addEventListener(
       "error",
       error => {
@@ -459,9 +490,19 @@ export class GameRoom {
           error
         );
 
-        this.removePlayer(
-          playerId
-        ).catch(console.error);
+        if (
+          this.sessions.get(playerId) ===
+          server
+        ) {
+          this.removePlayer(
+            playerId
+          ).catch(console.error);
+        } else {
+          console.log(
+            "Ignoring stale socket error:",
+            playerId
+          );
+        }
       }
     );
 
@@ -787,17 +828,10 @@ export class GameRoom {
 
     this.game.streak[playerId]++;
 
-    /*
-      The player successfully completed
-      the current round.
-    */
-
     const completedRound =
       this.game.currentRound;
 
-    /*
-      LAST ROUND
-    */
+    /* LAST ROUND */
 
     if (
       completedRound >=
@@ -828,9 +862,7 @@ export class GameRoom {
       return;
     }
 
-    /*
-      NEXT ROUND
-    */
+    /* NEXT ROUND */
 
     this.game.currentRound++;
 
@@ -1155,11 +1187,6 @@ const THREE_LETTER_CHUNKS = [
 ];
 
 function randomChunk() {
-  /*
-    75% chance of 2 letters
-    25% chance of 3 letters
-  */
-
   const useThree =
     Math.random() < 0.25;
 

@@ -37,7 +37,6 @@ const roomCodeDisplay = document.getElementById("roomCode");
 const copyRoomButton = document.getElementById("copyRoomButton");
 const playersDisplay = document.getElementById("players");
 
-
 /* =========================================================
    STATE
 ========================================================= */
@@ -78,7 +77,6 @@ let timerInterval = null;
 let currentPlayers = [];
 let lastSubmittedWord = "";
 
-
 /* =========================================================
    CHUNKS
 ========================================================= */
@@ -101,7 +99,6 @@ const CHUNKS = [
     "dog","cat"
 ];
 
-
 /* =========================================================
    PLAYER
 ========================================================= */
@@ -121,7 +118,6 @@ function getPlayerName() {
     return name;
 }
 
-
 /* =========================================================
    ROOM CODE
 ========================================================= */
@@ -136,7 +132,6 @@ function generateRoomCode() {
 
     return code;
 }
-
 
 /* =========================================================
    WEBSOCKET
@@ -165,7 +160,6 @@ function setConnectionStatus(text, type = "") {
         element.classList.add(type);
     }
 }
-
 
 /* =========================================================
    CREATE / JOIN ROOM
@@ -201,7 +195,6 @@ function joinRoom() {
 
     connectToRoom();
 }
-
 
 /* =========================================================
    CONNECT
@@ -286,7 +279,6 @@ function sendSocketMessage(data) {
         return false;
     }
 }
-
 
 /* =========================================================
    SOCKET MESSAGES
@@ -375,7 +367,10 @@ function handleSocketMessage(raw) {
         updateRoundDisplay();
 
         if (!isHost) {
-            showMessage(`🎯 Host selected ${totalRounds} rounds.`, "good");
+            showMessage(
+                `🎯 Host selected ${totalRounds} rounds.`,
+                "good"
+            );
         }
 
         return;
@@ -426,7 +421,6 @@ function handleSocketMessage(raw) {
     }
 }
 
-
 /* =========================================================
    SERVER GAME STATE
 ========================================================= */
@@ -460,7 +454,10 @@ function applyServerGameState(game) {
     }
 
     if (typeof game.timeLeft === "number") {
-        timeLeft = Math.max(0, Math.min(TURN_TIME, game.timeLeft));
+        timeLeft = Math.max(
+            0,
+            Math.min(TURN_TIME, game.timeLeft)
+        );
     }
 
     if (Array.isArray(game.players)) {
@@ -476,12 +473,16 @@ function applyServerGameState(game) {
     if (gameStarted && !gameOver) {
         recordButton.disabled = false;
         startTimer();
+
+        if (!recording && !processing) {
+            startRecording();
+        }
     } else {
         recordButton.disabled = true;
         stopTimer();
+        stopCurrentRecording();
     }
 }
-
 
 /* =========================================================
    ROOM UI
@@ -521,7 +522,6 @@ function renderPlayers(players) {
         playersDisplay.appendChild(div);
     });
 }
-
 
 /* =========================================================
    HOST ROUND GUI
@@ -621,17 +621,20 @@ function createRoundControls() {
 }
 
 function updateRoundInput() {
-    const input = document.getElementById("roundCountInput");
+    const input =
+        document.getElementById("roundCountInput");
 
     if (input) {
         input.value = totalRounds;
         input.disabled = gameStarted;
     }
 
-    const button = document.getElementById("applyRoundsButton");
+    const button =
+        document.getElementById("applyRoundsButton");
 
     if (button) {
         button.disabled = gameStarted;
+
         button.textContent =
             gameStarted
                 ? "🔒 Game Running"
@@ -642,7 +645,8 @@ function updateRoundInput() {
 function setRounds() {
     if (!isHost || gameStarted) return;
 
-    const input = document.getElementById("roundCountInput");
+    const input =
+        document.getElementById("roundCountInput");
 
     if (!input) return;
 
@@ -680,7 +684,6 @@ function clampRounds(value) {
     );
 }
 
-
 /* =========================================================
    HOST UI
 ========================================================= */
@@ -691,7 +694,8 @@ function updateHostUI() {
     }
 
     if (newGameButton) {
-        newGameButton.disabled = roomCode ? !isHost : false;
+        newGameButton.disabled =
+            roomCode ? !isHost : false;
 
         newGameButton.textContent =
             isHost
@@ -701,7 +705,6 @@ function updateHostUI() {
 
     updateRoundInput();
 }
-
 
 /* =========================================================
    ROUND DISPLAY
@@ -733,14 +736,16 @@ function updateRoundDisplay() {
         `Round ${currentRound} / ${totalRounds}`;
 }
 
-
 /* =========================================================
    NEW GAME
 ========================================================= */
 
 function newGame() {
     if (roomCode && !isHost) {
-        showMessage("🔒 Only the host can start the game.", "bad");
+        showMessage(
+            "🔒 Only the host can start the game.",
+            "bad"
+        );
         return;
     }
 
@@ -762,7 +767,8 @@ function newGame() {
 }
 
 function getRoundCount() {
-    const input = document.getElementById("roundCountInput");
+    const input =
+        document.getElementById("roundCountInput");
 
     if (!input) {
         return clampRounds(totalRounds);
@@ -784,6 +790,7 @@ function getRoundCount() {
 
 function startLocalGame() {
     stopTimer();
+    stopCurrentRecording();
 
     score = 0;
     streak = 0;
@@ -803,7 +810,10 @@ function startLocalGame() {
 
     recordButton.disabled = false;
 
-    bomb.classList.remove("explode", "warning");
+    bomb.classList.remove(
+        "explode",
+        "warning"
+    );
 
     updateStats();
     renderUsedWords();
@@ -811,26 +821,35 @@ function startLocalGame() {
     updateTimer();
 
     startTimer();
-}
 
+    setTimeout(() => {
+        if (
+            gameStarted &&
+            !gameOver &&
+            !recording &&
+            !processing
+        ) {
+            startRecording();
+        }
+    }, 150);
+}
 
 /* =========================================================
    TIMER
 ========================================================= */
 
 function startTimer() {
-    stopTimer();
+    if (timerInterval) return;
 
     if (!gameStarted || gameOver) return;
 
     timerInterval = setInterval(() => {
-        if (processing || recording) return;
-
         timeLeft -= 0.1;
 
         if (timeLeft <= 0) {
             timeLeft = 0;
             updateTimer();
+
             timeExpired();
             return;
         }
@@ -852,13 +871,18 @@ function stopTimer() {
 function updateTimer() {
     if (!timerDisplay) return;
 
-    timerDisplay.textContent = timeLeft.toFixed(1);
+    timerDisplay.textContent =
+        timeLeft.toFixed(1);
 
     const percent =
-        Math.max(0, (timeLeft / TURN_TIME) * 100);
+        Math.max(
+            0,
+            (timeLeft / TURN_TIME) * 100
+        );
 
     if (timerBar) {
-        timerBar.style.width = `${percent}%`;
+        timerBar.style.width =
+            `${percent}%`;
     }
 
     if (timeLeft <= 5) {
@@ -875,6 +899,8 @@ function timeExpired() {
 
     stopTimer();
 
+    stopCurrentRecording();
+
     if (roomCode) {
         if (isHost) {
             sendSocketMessage({
@@ -887,7 +913,6 @@ function timeExpired() {
     }
 }
 
-
 /* =========================================================
    CHUNK
 ========================================================= */
@@ -898,7 +923,9 @@ function chooseChunk() {
     do {
         chunk =
             CHUNKS[
-                Math.floor(Math.random() * CHUNKS.length)
+                Math.floor(
+                    Math.random() * CHUNKS.length
+                )
             ];
     } while (
         CHUNKS.length > 1 &&
@@ -927,7 +954,6 @@ function displayChunk() {
             : "--";
 }
 
-
 /* =========================================================
    RECORDING
 ========================================================= */
@@ -937,7 +963,8 @@ async function startRecording() {
         processing ||
         recording ||
         !gameStarted ||
-        gameOver
+        gameOver ||
+        timeLeft <= 0
     ) {
         return;
     }
@@ -948,43 +975,69 @@ async function startRecording() {
                 audio: true
             });
 
+        if (
+            !gameStarted ||
+            gameOver ||
+            timeLeft <= 0
+        ) {
+            cleanupStream();
+            return;
+        }
+
         audioChunks = [];
 
         const mimeType =
-            MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+            MediaRecorder.isTypeSupported(
+                "audio/webm;codecs=opus"
+            )
                 ? "audio/webm;codecs=opus"
                 : "audio/webm";
 
         mediaRecorder =
-            new MediaRecorder(mediaStream, {
-                mimeType
-            });
+            new MediaRecorder(
+                mediaStream,
+                {
+                    mimeType
+                }
+            );
 
-        mediaRecorder.ondataavailable = event => {
-            if (event.data?.size > 0) {
-                audioChunks.push(event.data);
-            }
-        };
+        mediaRecorder.ondataavailable =
+            event => {
+                if (event.data?.size > 0) {
+                    audioChunks.push(
+                        event.data
+                    );
+                }
+            };
 
-        mediaRecorder.onstop = async () => {
-            audioBlob =
-                new Blob(audioChunks, {
-                    type: mimeType
-                });
+        mediaRecorder.onstop =
+            async () => {
+                audioBlob =
+                    new Blob(
+                        audioChunks,
+                        {
+                            type: mimeType
+                        }
+                    );
 
-            downloadButton.disabled = false;
+                downloadButton.disabled = false;
 
-            await transcribeWord();
+                await transcribeWord();
 
-            cleanupStream();
-        };
+                cleanupStream();
+            };
 
         mediaRecorder.start();
 
         recording = true;
 
-        recordButton.classList.add("speaking");
-        recordButton.textContent = "🔴 RECORDING...";
+        recordButton.classList.add(
+            "speaking"
+        );
+
+        recordButton.textContent =
+            "🔴 LISTENING...";
+
         recordingStatus.textContent =
             "🎤 Listening... say ONE word!";
 
@@ -1000,40 +1053,73 @@ async function startRecording() {
     }
 }
 
-function stopRecording() {
-    if (!recording) return;
+/*
+  Stops the current recording without touching
+  the timer.
+*/
+function stopCurrentRecording() {
+    if (!mediaRecorder) {
+        recording = false;
+        return;
+    }
+
+    if (
+        mediaRecorder.state ===
+        "recording"
+    ) {
+        try {
+            mediaRecorder.stop();
+        } catch {}
+    }
 
     recording = false;
 
-    recordButton.classList.remove("speaking");
-    recordButton.textContent = "🧠 PROCESSING...";
-    recordingStatus.textContent = "🧠 Transcribing...";
+    recordButton?.classList.remove(
+        "speaking"
+    );
 
     if (
-        mediaRecorder &&
-        mediaRecorder.state === "recording"
+        gameStarted &&
+        !gameOver
     ) {
-        mediaRecorder.stop();
+        recordButton.textContent =
+            "🧠 PROCESSING...";
     }
 }
-
 
 /* =========================================================
    SPEAK BUTTON
 ========================================================= */
 
+/*
+  Recording is automatic now.
+
+  Clicking the button simply restarts recording if
+  the game is active and nothing is currently processing.
+*/
 if (recordButton) {
     recordButton.disabled = true;
 
-    recordButton.addEventListener("click", () => {
-        if (recording) {
-            stopRecording();
-        } else {
+    recordButton.addEventListener(
+        "click",
+        () => {
+            if (
+                !gameStarted ||
+                gameOver ||
+                processing
+            ) {
+                return;
+            }
+
+            if (recording) {
+                stopCurrentRecording();
+                return;
+            }
+
             startRecording();
         }
-    });
+    );
 }
-
 
 /* =========================================================
    TRANSCRIPTION
@@ -1041,15 +1127,24 @@ if (recordButton) {
 
 async function transcribeWord() {
     if (!audioBlob) {
-        showMessage("No recording was created.", "bad");
+        showMessage(
+            "No recording was created.",
+            "bad"
+        );
         return;
     }
 
     processing = true;
-    recordButton.disabled = true;
-    stopTimer();
 
-    const formData = new FormData();
+    recordButton.disabled = true;
+
+    /*
+      IMPORTANT:
+      DO NOT stop the timer here.
+    */
+
+    const formData =
+        new FormData();
 
     formData.append(
         "file",
@@ -1059,19 +1154,26 @@ async function transcribeWord() {
 
     try {
         const response =
-            await fetch(WORKER_URL, {
-                method: "POST",
-                body: formData
-            });
+            await fetch(
+                WORKER_URL,
+                {
+                    method: "POST",
+                    body: formData
+                }
+            );
 
-        const raw = await response.text();
+        const raw =
+            await response.text();
 
         let result;
 
         try {
-            result = JSON.parse(raw);
+            result =
+                JSON.parse(raw);
         } catch {
-            throw new Error("Worker returned invalid JSON.");
+            throw new Error(
+                "Worker returned invalid JSON."
+            );
         }
 
         if (!response.ok) {
@@ -1089,7 +1191,9 @@ async function transcribeWord() {
         }
 
         const word =
-            normalizeWord(result.text);
+            normalizeWord(
+                result.text
+            );
 
         transcript.textContent =
             word || "???";
@@ -1111,22 +1215,48 @@ async function transcribeWord() {
         console.error(error);
 
         showMessage(
-            "Transcription error: " + error.message,
+            "Transcription error: " +
+            error.message,
             "bad"
         );
 
-        recordingStatus.textContent = "Try again.";
+        recordingStatus.textContent =
+            "Try again.";
 
     } finally {
         processing = false;
 
-        if (gameStarted && !gameOver) {
+        if (
+            gameStarted &&
+            !gameOver &&
+            timeLeft > 0
+        ) {
             recordButton.disabled = false;
-            startTimer();
+
+            /*
+              Timer was never stopped.
+              Automatically listen again if the
+              previous recording did not submit a word.
+            */
+            if (
+                !recording &&
+                !processing
+            ) {
+                setTimeout(() => {
+                    if (
+                        gameStarted &&
+                        !gameOver &&
+                        !recording &&
+                        !processing &&
+                        timeLeft > 0
+                    ) {
+                        startRecording();
+                    }
+                }, 150);
+            }
         }
     }
 }
-
 
 /* =========================================================
    WORD
@@ -1147,18 +1277,58 @@ function submitWord(word) {
     if (!word) return;
 
     if (usedWords.has(word)) {
-        showWordFailure("duplicate", word);
+        showWordFailure(
+            "duplicate",
+            word
+        );
+
+        if (
+            gameStarted &&
+            !gameOver &&
+            timeLeft > 0
+        ) {
+            setTimeout(() => {
+                if (
+                    gameStarted &&
+                    !gameOver &&
+                    !recording &&
+                    !processing
+                ) {
+                    startRecording();
+                }
+            }, 150);
+        }
+
         return;
     }
 
     if (!word.includes(selectedChunk)) {
-        showWordFailure("missingChunk", word);
+        showWordFailure(
+            "missingChunk",
+            word
+        );
+
+        if (
+            gameStarted &&
+            !gameOver &&
+            timeLeft > 0
+        ) {
+            setTimeout(() => {
+                if (
+                    gameStarted &&
+                    !gameOver &&
+                    !recording &&
+                    !processing
+                ) {
+                    startRecording();
+                }
+            }, 150);
+        }
+
         return;
     }
 
     if (roomCode) {
-        stopTimer();
-
         sendSocketMessage({
             type: "word",
             word
@@ -1170,7 +1340,6 @@ function submitWord(word) {
     acceptLocalWord(word);
 }
 
-
 /* =========================================================
    LOCAL WORD
 ========================================================= */
@@ -1180,7 +1349,10 @@ function acceptLocalWord(word) {
 
     const points =
         10 +
-        Math.min(streak * 2, 20);
+        Math.min(
+            streak * 2,
+            20
+        );
 
     score += points;
     streak++;
@@ -1196,9 +1368,13 @@ function acceptLocalWord(word) {
     resultText.textContent =
         `✅ Contains "${selectedChunk.toUpperCase()}"`;
 
-    resultText.className = "result good";
+    resultText.className =
+        "result good";
 
-    if (currentRound >= totalRounds) {
+    if (
+        currentRound >=
+        totalRounds
+    ) {
         finishGame();
         return;
     }
@@ -1207,39 +1383,60 @@ function acceptLocalWord(word) {
 
     chooseChunk();
 
-    timeLeft = TURN_TIME;
+    timeLeft =
+        TURN_TIME;
 
     updateRoundDisplay();
     updateTimer();
 
-    startTimer();
+    /*
+      Automatically begin listening for
+      the next round.
+    */
+    setTimeout(() => {
+        if (
+            gameStarted &&
+            !gameOver &&
+            !recording &&
+            !processing
+        ) {
+            startRecording();
+        }
+    }, 150);
 }
-
 
 /* =========================================================
    WORD ACCEPTED FROM SERVER
 ========================================================= */
 
 function handleWordAccepted(data) {
-    const word = normalizeWord(data.word);
+    const word =
+        normalizeWord(
+            data.word
+        );
 
     if (!word) return;
 
     usedWords.add(word);
 
     if (data.playerId === playerId) {
-        if (typeof data.points === "number") {
+        if (
+            typeof data.points ===
+            "number"
+        ) {
             score += data.points;
         }
 
         streak++;
 
-        transcript.textContent = word;
+        transcript.textContent =
+            word;
 
         resultText.textContent =
             `✅ Contains "${selectedChunk.toUpperCase()}"`;
 
-        resultText.className = "result good";
+        resultText.className =
+            "result good";
 
         recordingStatus.textContent =
             "Nice! Next round...";
@@ -1253,38 +1450,73 @@ function handleWordAccepted(data) {
         );
     }
 
-    if (typeof data.currentRound === "number") {
-        currentRound = data.currentRound;
+    if (
+        typeof data.currentRound ===
+        "number"
+    ) {
+        currentRound =
+            data.currentRound;
     }
 
-    if (typeof data.totalRounds === "number") {
-        totalRounds = clampRounds(data.totalRounds);
+    if (
+        typeof data.totalRounds ===
+        "number"
+    ) {
+        totalRounds =
+            clampRounds(
+                data.totalRounds
+            );
     }
 
     if (data.nextChunk) {
-        selectedChunk = normalizeChunk(data.nextChunk);
+        selectedChunk =
+            normalizeChunk(
+                data.nextChunk
+            );
+
         displayChunk();
     }
 
     updateRoundDisplay();
 
-    if (currentRound >= totalRounds) {
+    if (
+        currentRound >=
+        totalRounds
+    ) {
         finishGame();
         return;
     }
 
     timeLeft =
-        typeof data.timeLeft === "number"
+        typeof data.timeLeft ===
+        "number"
             ? data.timeLeft
             : TURN_TIME;
 
     updateTimer();
 
-    if (gameStarted && !gameOver) {
-        startTimer();
+    if (
+        gameStarted &&
+        !gameOver &&
+        timeLeft > 0
+    ) {
+        /*
+          Start listening automatically
+          for the next word.
+        */
+        setTimeout(() => {
+            if (
+                gameStarted &&
+                !gameOver &&
+                !recording &&
+                !processing &&
+                timeLeft > 0
+            ) {
+                startRecording();
+            }
+        }, 150);
     }
 }
-
 
 /* =========================================================
    WORD FAILURE
@@ -1296,17 +1528,37 @@ function handleServerWordFailure(data) {
         data.word || lastSubmittedWord
     );
 
-    startTimer();
+    if (
+        gameStarted &&
+        !gameOver &&
+        timeLeft > 0
+    ) {
+        setTimeout(() => {
+            if (
+                gameStarted &&
+                !gameOver &&
+                !recording &&
+                !processing &&
+                timeLeft > 0
+            ) {
+                startRecording();
+            }
+        }, 150);
+    }
 }
 
-function showWordFailure(reason, word) {
+function showWordFailure(
+    reason,
+    word
+) {
     if (reason === "duplicate") {
         showMessage(
             `"${word.toUpperCase()}" was already used!`,
             "bad"
         );
 
-        resultText.textContent = "🚫 Already used";
+        resultText.textContent =
+            "🚫 Already used";
     } else {
         showMessage(
             `"${word.toUpperCase()}" does not contain "${selectedChunk.toUpperCase()}".`,
@@ -1317,15 +1569,16 @@ function showWordFailure(reason, word) {
             `❌ Missing "${selectedChunk.toUpperCase()}"`;
     }
 
-    resultText.className = "result bad";
+    resultText.className =
+        "result bad";
 
     streak = 0;
+
     updateStats();
 
     recordingStatus.textContent =
         "Try another word.";
 }
-
 
 /* =========================================================
    GAME OVER
@@ -1333,6 +1586,7 @@ function showWordFailure(reason, word) {
 
 function finishGame() {
     stopTimer();
+    stopCurrentRecording();
 
     gameStarted = false;
     gameOver = true;
@@ -1345,7 +1599,8 @@ function finishGame() {
     resultText.textContent =
         "🏆 GAME COMPLETE";
 
-    resultText.className = "result good";
+    resultText.className =
+        "result good";
 
     recordingStatus.textContent =
         "All rounds completed.";
@@ -1356,18 +1611,26 @@ function finishGame() {
     );
 }
 
-function endGame(text = "💥 BOOM!") {
+function endGame(
+    text = "💥 BOOM!"
+) {
     stopTimer();
+    stopCurrentRecording();
 
     gameStarted = false;
     gameOver = true;
 
     recordButton.disabled = true;
 
-    bomb?.classList.add("explode");
+    bomb?.classList.add(
+        "explode"
+    );
 
-    resultText.textContent = text;
-    resultText.className = "result bad";
+    resultText.textContent =
+        text;
+
+    resultText.className =
+        "result bad";
 
     recordingStatus.textContent =
         "Game over.";
@@ -1376,21 +1639,26 @@ function endGame(text = "💥 BOOM!") {
     updateRoundInput();
 
     setTimeout(() => {
-        bomb?.classList.remove("explode");
+        bomb?.classList.remove(
+            "explode"
+        );
     }, 600);
 }
-
 
 /* =========================================================
    STATS
 ========================================================= */
 
 function updateStats() {
-    scoreDisplay.textContent = score;
-    streakDisplay.textContent = streak;
-    wordsUsedDisplay.textContent = usedWords.size;
-}
+    scoreDisplay.textContent =
+        score;
 
+    streakDisplay.textContent =
+        streak;
+
+    wordsUsedDisplay.textContent =
+        usedWords.size;
+}
 
 /* =========================================================
    USED WORDS
@@ -1400,120 +1668,184 @@ function renderUsedWords() {
     if (!usedWordsDisplay) return;
 
     if (usedWords.size === 0) {
-        usedWordsDisplay.textContent = "No words yet.";
+        usedWordsDisplay.textContent =
+            "No words yet.";
+
         return;
     }
 
-    usedWordsDisplay.innerHTML = "";
+    usedWordsDisplay.innerHTML =
+        "";
 
     [...usedWords]
         .reverse()
         .forEach(word => {
             const element =
-                document.createElement("span");
+                document.createElement(
+                    "span"
+                );
 
-            element.className = "used-word";
-            element.textContent = word;
+            element.className =
+                "used-word";
 
-            usedWordsDisplay.appendChild(element);
+            element.textContent =
+                word;
+
+            usedWordsDisplay.appendChild(
+                element
+            );
         });
 }
-
 
 /* =========================================================
    COPY
 ========================================================= */
 
-copyRoomButton?.addEventListener("click", async () => {
-    if (!roomCode) return;
+copyRoomButton?.addEventListener(
+    "click",
+    async () => {
+        if (!roomCode) return;
 
-    try {
-        await navigator.clipboard.writeText(roomCode);
+        try {
+            await navigator.clipboard.writeText(
+                roomCode
+            );
 
-        copyRoomButton.textContent = "✅ Copied!";
+            copyRoomButton.textContent =
+                "✅ Copied!";
 
-        setTimeout(() => {
-            copyRoomButton.textContent = "📋 Copy";
-        }, 1200);
-    } catch {
-        showMessage(
-            "Couldn't copy room code.",
-            "bad"
-        );
+            setTimeout(() => {
+                copyRoomButton.textContent =
+                    "📋 Copy";
+            }, 1200);
+
+        } catch {
+            showMessage(
+                "Couldn't copy room code.",
+                "bad"
+            );
+        }
     }
-});
+);
 
-copyButton?.addEventListener("click", async () => {
-    const word = transcript.textContent.trim();
+copyButton?.addEventListener(
+    "click",
+    async () => {
+        const word =
+            transcript.textContent.trim();
 
-    if (!word || word === "—" || word === "???") return;
+        if (
+            !word ||
+            word === "—" ||
+            word === "???"
+        ) {
+            return;
+        }
 
-    try {
-        await navigator.clipboard.writeText(word);
+        try {
+            await navigator.clipboard.writeText(
+                word
+            );
 
-        copyButton.textContent = "✅ Copied!";
+            copyButton.textContent =
+                "✅ Copied!";
 
-        setTimeout(() => {
-            copyButton.textContent = "📋 Copy Word";
-        }, 1200);
-    } catch {
-        showMessage(
-            "Couldn't copy the word.",
-            "bad"
-        );
+            setTimeout(() => {
+                copyButton.textContent =
+                    "📋 Copy Word";
+            }, 1200);
+
+        } catch {
+            showMessage(
+                "Couldn't copy the word.",
+                "bad"
+            );
+        }
     }
-});
+);
 
-downloadButton?.addEventListener("click", () => {
-    if (!audioBlob) return;
+downloadButton?.addEventListener(
+    "click",
+    () => {
+        if (!audioBlob) return;
 
-    const url = URL.createObjectURL(audioBlob);
-    const link = document.createElement("a");
+        const url =
+            URL.createObjectURL(
+                audioBlob
+            );
 
-    link.href = url;
-    link.download = "word-bomb-word.webm";
+        const link =
+            document.createElement("a");
 
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+        link.href = url;
+        link.download =
+            "word-bomb-word.webm";
 
-    URL.revokeObjectURL(url);
-});
+        document.body.appendChild(
+            link
+        );
 
+        link.click();
+        link.remove();
+
+        URL.revokeObjectURL(url);
+    }
+);
 
 /* =========================================================
    BUTTONS
 ========================================================= */
 
-createRoomButton?.addEventListener("click", createRoom);
-joinRoomButton?.addEventListener("click", joinRoom);
-newGameButton?.addEventListener("click", newGame);
+createRoomButton?.addEventListener(
+    "click",
+    createRoom
+);
 
-roomInput?.addEventListener("keydown", event => {
-    if (event.key === "Enter") {
-        joinRoom();
+joinRoomButton?.addEventListener(
+    "click",
+    joinRoom
+);
+
+newGameButton?.addEventListener(
+    "click",
+    newGame
+);
+
+roomInput?.addEventListener(
+    "keydown",
+    event => {
+        if (event.key === "Enter") {
+            joinRoom();
+        }
     }
-});
-
+);
 
 /* =========================================================
    MESSAGES
 ========================================================= */
 
-function showMessage(text, type = "") {
+function showMessage(
+    text,
+    type = ""
+) {
     if (!message) return;
 
-    message.textContent = text;
-    message.className = `message ${type}`;
+    message.textContent =
+        text;
+
+    message.className =
+        `message ${type}`;
 }
 
 function hideMessage() {
     if (!message) return;
 
-    message.textContent = "";
-    message.className = "message";
-}
+    message.textContent =
+        "";
 
+    message.className =
+        "message";
+}
 
 /* =========================================================
    CLEANUP
@@ -1521,34 +1853,44 @@ function hideMessage() {
 
 function cleanupStream() {
     if (mediaStream) {
-        mediaStream.getTracks().forEach(track => track.stop());
+        mediaStream
+            .getTracks()
+            .forEach(
+                track => track.stop()
+            );
     }
 
     mediaStream = null;
+    mediaRecorder = null;
 }
 
-window.addEventListener("beforeunload", () => {
-    intentionalDisconnect = true;
+window.addEventListener(
+    "beforeunload",
+    () => {
+        intentionalDisconnect = true;
 
-    cleanupStream();
+        cleanupStream();
 
-    if (socket) {
-        try {
-            socket.close();
-        } catch {}
+        if (socket) {
+            try {
+                socket.close();
+            } catch {}
+        }
     }
-});
-
+);
 
 /* =========================================================
    INITIALIZE
 ========================================================= */
 
 playerId =
-    localStorage.getItem("voiceBombPlayerId");
+    localStorage.getItem(
+        "voiceBombPlayerId"
+    );
 
 if (!playerId) {
-    playerId = generatePlayerId();
+    playerId =
+        generatePlayerId();
 
     localStorage.setItem(
         "voiceBombPlayerId",
@@ -1556,9 +1898,11 @@ if (!playerId) {
     );
 }
 
-playerName = getPlayerName();
+playerName =
+    getPlayerName();
 
-totalRounds = MIN_ROUNDS;
+totalRounds =
+    MIN_ROUNDS;
 
 updateStats();
 updateTimer();
@@ -1566,4 +1910,6 @@ displayChunk();
 updateRoundDisplay();
 updateHostUI();
 
-console.log("[Voice Bomb] script.js loaded.");
+console.log(
+    "[Voice Bomb] script.js loaded."
+);
