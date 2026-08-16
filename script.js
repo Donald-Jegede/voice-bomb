@@ -1352,7 +1352,7 @@ function finishGame() {
 
     showMessage(
         `🏆 ${totalRounds} rounds complete!`,
-        "good";
+        "good"
     );
 }
 
